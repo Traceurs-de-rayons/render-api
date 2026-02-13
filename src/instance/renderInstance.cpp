@@ -1,8 +1,11 @@
 #include "renderInstance.hpp"
+#include "renderDevice.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vulkan/vulkan_core.h>
 
 using namespace renderApi::instance;
@@ -32,8 +35,25 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 
 RenderInstance::~RenderInstance()
 {
+	for (auto& gpu : gpus_)
+	{
+		if (gpu && gpu->running)
+		{
+			gpu->running = false;
+			if (gpu->finishCode.valid())
+				gpu->finishCode.wait();
+		}
+	}
+	gpus_.clear();
 	if (instance_)
 	{
 		vkDestroyInstance(instance_, nullptr);
+		instance_ = nullptr;
 	}
+}
+
+bool RenderInstance::addGPU(std::unique_ptr<device::GPU> gpu)
+{
+	gpus_.push_back(std::move(gpu));
+	return true;
 }

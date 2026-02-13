@@ -1,0 +1,311 @@
+#include "buffer.hpp"
+
+#include <algorithm>
+#include <cstring>
+#include <iostream>
+
+// Forward declaration - will be defined in gpuContext.hpp
+namespace renderApi {
+	class GPUContext {
+	  public:
+		device::GPU& getGPU() { return *gpu_; }
+		VkDevice	 getDevice() { return gpu_->device; }
+		device::GPU* gpu_;
+
+		VkCommandBuffer beginOneTimeCommands();
+		void			endOneTimeCommands(VkCommandBuffer cmd);
+	};
+} // namespace renderApi
+
+using namespace renderApi;
+
+Buffer::Buffer()
+	: context_(nullptr), buffer_(VK_NULL_HANDLE), memory_(VK_NULL_HANDLE), deviceAddress_(0), size_(0), type_(BufferType::VERTEX),
+	  usage_(BufferUsage::STATIC), mappedPtr_(nullptr), persistentlyMapped_(false) {}
+
+Buffer::~Buffer() { destroy(); }
+
+Buffer::Buffer(Buffer&& other) noexcept
+	: context_(other.context_), buffer_(other.buffer_), memory_(other.memory_), deviceAddress_(other.deviceAddress_), size_(other.size_),
+	  type_(other.type_), usage_(other.usage_), mappedPtr_(other.mappedPtr_), persistentlyMapped_(other.persistentlyMapped_) {
+	other.buffer_	 = VK_NULL_HANDLE;
+	other.memory_	 = VK_NULL_HANDLE;
+	other.mappedPtr_ = nullptr;
+	other.size_		 = 0;
+}
+
+Buffer& Buffer::operator=(Buffer&& other) noexcept {
+	if (this != &other) {
+		destroy();
+		context_			= other.context_;
+		buffer_				= other.buffer_;
+		memory_				= other.memory_;
+		deviceAddress_		= other.deviceAddress_;
+		size_				= other.size_;
+		type_				= other.type_;
+		usage_				= other.usage_;
+		mappedPtr_			= other.mappedPtr_;
+		persistentlyMapped_ = other.persistentlyMapped_;
+		other.buffer_		= VK_NULL_HANDLE;
+		other.memory_		= VK_NULL_HANDLE;
+		other.mappedPtr_	= nullptr;
+		other.size_			= 0;
+	}
+	return *this;
+}
+
+VkBufferUsageFlags Buffer::getVkUsageFlags() const {
+	VkBufferUsageFlags flags = 0;
+
+	switch (type_) {
+	case BufferType::VERTEX:
+		flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		break;
+	case BufferType::INDEX:
+		flags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		break;
+	case BufferType::UNIFORM:
+		flags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		break;
+	case BufferType::STORAGE:
+		flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		break;
+	case BufferType::STAGING:
+		flags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		break;
+	case BufferType::TRANSFER_SRC:
+		flags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		break;
+	case BufferType::TRANSFER_DST:
+		flags = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		break;
+	}
+
+	// Add shader device address flag for buffers that might need it
+	if (type_ == BufferType::STORAGE || type_ == BufferType::VERTEX || type_ == BufferType::INDEX) {
+		flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+	}
+
+	return flags;
+}
+
+VkMemoryPropertyFlags Buffer::getMemoryFlags() const {
+	switch (usage_) {
+	case BufferUsage::STATIC:
+		return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+	case BufferUsage::DYNAMIC:
+	case BufferUsage::STREAM:
+		return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	}
+	return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+}
+
+bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsage usage) {
+	destroy();
+
+	context_ = &context;
+	size_	 = size;
+	type_	 = type;
+	usage_	 = usage;
+
+	if (size == 0) {
+		std::cerr << "Cannot create buffer with size 0" << std::endl;
+		return false;
+	}
+
+	VkDevice	 device = context_->getDevice();
+	device::GPU& gpu	= context_->getGPU();
+
+	// Create buffer
+	VkBufferCreateInfo bufferInfo{};
+	bufferInfo.sType	   = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size		   = size;
+	bufferInfo.usage	   = getVkUsageFlags();
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer_) != VK_SUCCESS) {
+		std::cerr << "Failed to create buffer" << std::endl;
+		return false;
+	}
+
+	// Get memory requirements
+	VkMemoryRequirements memRequirements;
+	vkGetBufferMemoryRequirements(device, buffer_, &memRequirements);
+
+	// Allocate memory
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType			  = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize  = memRequirements.size;
+	allocInfo.memoryTypeIndex = device::findMemoryType(gpu.physicalDevice, memRequirements.memoryTypeBits, getMemoryFlags());
+
+	// Add device address allocation flag if needed
+	VkMemoryAllocateFlagsInfo flagsInfo{};
+	if (getVkUsageFlags() & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+		flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+		flagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+		allocInfo.pNext = &flagsInfo;
+	}
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &memory_) != VK_SUCCESS) {
+		std::cerr << "Failed to allocate buffer memory" << std::endl;
+		vkDestroyBuffer(device, buffer_, nullptr);
+		buffer_ = VK_NULL_HANDLE;
+		return false;
+	}
+
+	// Bind memory
+	vkBindBufferMemory(device, buffer_, memory_, 0);
+
+	// Get device address if supported
+	if (getVkUsageFlags() & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+		VkBufferDeviceAddressInfo addressInfo{};
+		addressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		addressInfo.buffer = buffer_;
+		deviceAddress_	   = vkGetBufferDeviceAddress(device, &addressInfo);
+	}
+
+	// Persistent mapping for dynamic/stream buffers
+	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM) {
+		map();
+		persistentlyMapped_ = true;
+	}
+
+	return true;
+}
+
+void Buffer::destroy() {
+	if (!context_ || buffer_ == VK_NULL_HANDLE) return;
+
+	VkDevice device = context_->getDevice();
+
+	if (persistentlyMapped_ && mappedPtr_) {
+		unmap();
+	}
+
+	if (memory_ != VK_NULL_HANDLE) {
+		vkFreeMemory(device, memory_, nullptr);
+		memory_ = VK_NULL_HANDLE;
+	}
+
+	if (buffer_ != VK_NULL_HANDLE) {
+		vkDestroyBuffer(device, buffer_, nullptr);
+		buffer_ = VK_NULL_HANDLE;
+	}
+
+	size_				= 0;
+	mappedPtr_			= nullptr;
+	persistentlyMapped_ = false;
+}
+
+bool Buffer::resize(size_t newSize) {
+	if (!isValid()) return false;
+
+	BufferType	oldType	   = type_;
+	BufferUsage oldUsage   = usage_;
+	GPUContext* oldContext = context_;
+
+	destroy();
+	return create(*oldContext, newSize, oldType, oldUsage);
+}
+
+bool Buffer::upload(const void* data, size_t size, size_t offset) {
+	if (!isValid() || !data) return false;
+	if (offset + size > size_) {
+		std::cerr << "Upload size exceeds buffer size" << std::endl;
+		return false;
+	}
+
+	// For host-visible buffers, just memcpy
+	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING) {
+		void* dst = map();
+		if (!dst) return false;
+		memcpy(static_cast<char*>(dst) + offset, data, size);
+		if (!persistentlyMapped_) unmap();
+		return true;
+	}
+
+	// For device-local buffers, use staging
+	Buffer staging;
+	if (!staging.create(*context_, size, BufferType::STAGING, BufferUsage::STREAM)) {
+		return false;
+	}
+
+	void* dst = staging.map();
+	memcpy(dst, data, size);
+	staging.unmap();
+
+	// Copy buffer
+	VkCommandBuffer cmd = context_->beginOneTimeCommands();
+
+	VkBufferCopy copyRegion{};
+	copyRegion.srcOffset = 0;
+	copyRegion.dstOffset = offset;
+	copyRegion.size		 = size;
+	vkCmdCopyBuffer(cmd, staging.getHandle(), buffer_, 1, &copyRegion);
+
+	context_->endOneTimeCommands(cmd);
+
+	return true;
+}
+
+bool Buffer::download(void* data, size_t size, size_t offset) {
+	if (!isValid() || !data) return false;
+	if (offset + size > size_) {
+		std::cerr << "Download size exceeds buffer size" << std::endl;
+		return false;
+	}
+
+	// For host-visible buffers, just memcpy
+	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING) {
+		void* src = map();
+		if (!src) return false;
+		memcpy(data, static_cast<char*>(src) + offset, size);
+		if (!persistentlyMapped_) unmap();
+		return true;
+	}
+
+	// For device-local buffers, use staging
+	Buffer staging;
+	if (!staging.create(*context_, size, BufferType::STAGING, BufferUsage::STREAM)) {
+		return false;
+	}
+
+	// Copy to staging
+	VkCommandBuffer cmd = context_->beginOneTimeCommands();
+
+	VkBufferCopy copyRegion{};
+	copyRegion.srcOffset = offset;
+	copyRegion.dstOffset = 0;
+	copyRegion.size		 = size;
+	vkCmdCopyBuffer(cmd, buffer_, staging.getHandle(), 1, &copyRegion);
+
+	context_->endOneTimeCommands(cmd);
+
+	void* src = staging.map();
+	memcpy(data, src, size);
+	staging.unmap();
+
+	return true;
+}
+
+void* Buffer::map() {
+	if (!isValid()) return nullptr;
+	if (mappedPtr_) return mappedPtr_;
+
+	VkDevice device = context_->getDevice();
+	if (vkMapMemory(device, memory_, 0, size_, 0, &mappedPtr_) != VK_SUCCESS) {
+		std::cerr << "Failed to map buffer memory" << std::endl;
+		return nullptr;
+	}
+	return mappedPtr_;
+}
+
+void Buffer::unmap() {
+	if (!isValid() || !mappedPtr_) return;
+
+	VkDevice device = context_->getDevice();
+	vkUnmapMemory(device, memory_);
+	mappedPtr_ = nullptr;
+}
+
+VkDeviceAddress Buffer::getDeviceAddress() const { return deviceAddress_; }
