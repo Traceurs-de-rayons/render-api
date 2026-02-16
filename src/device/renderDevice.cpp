@@ -1,6 +1,10 @@
 #include "renderDevice.hpp"
 
 #include "renderInstance.hpp"
+#include "../compute/computeTask.hpp"
+#include "../graphics/graphicsTask.hpp"
+#include "../context/gpuContext.hpp"
+#include "../window/renderWindow.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -89,15 +93,16 @@ std::vector<PhysicalDeviceInfo> renderApi::device::enumeratePhysicalDevices(VkIn
 VkPhysicalDevice renderApi::device::selectBestPhysicalDevice(VkInstance instance) {
 	auto devices = enumeratePhysicalDevices(instance);
 
-	if (devices.empty()) return VK_NULL_HANDLE;
+	if (devices.empty())
+		return VK_NULL_HANDLE;
 
 	std::sort(devices.begin(), devices.end(), [](const PhysicalDeviceInfo& a, const PhysicalDeviceInfo& b) {
 		if (a.discreteGPU != b.discreteGPU) return a.discreteGPU > b.discreteGPU;
 		return a.memoryMB > b.memoryMB;
 	});
-
 	return devices[0].device;
 }
+
 InitDeviceResult renderApi::device::finishDeviceInitialization(GPU& gpu) {
 	if (!gpu.device) return VK_CREATE_DEVICE_FAILED;
 
@@ -108,9 +113,8 @@ InitDeviceResult renderApi::device::finishDeviceInitialization(GPU& gpu) {
 	poolInfo.queueFamilyIndex = gpu.queueFamilies.graphicsFamily >= 0 ? gpu.queueFamilies.graphicsFamily : gpu.queueFamilies.computeFamily;
 	poolInfo.flags			  = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-	if (vkCreateCommandPool(gpu.device, &poolInfo, nullptr, &gpu.commandPool) != VK_SUCCESS) {
+	if (vkCreateCommandPool(gpu.device, &poolInfo, nullptr, &gpu.commandPool) != VK_SUCCESS)
 		return VK_CREATE_DEVICE_FAILED;
-	}
 
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 			{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100}};
@@ -126,10 +130,30 @@ InitDeviceResult renderApi::device::finishDeviceInitialization(GPU& gpu) {
 		return VK_CREATE_DEVICE_FAILED;
 	}
 
+	// Initialize GPUContext
+	gpu.context = std::make_unique<renderApi::GPUContext>();
+	if (!gpu.context->initialize(&gpu)) {
+		std::cerr << "[GPU] Failed to initialize GPUContext!" << std::endl;
+		return VK_CREATE_DEVICE_FAILED;
+	}
+
 	return INIT_DEVICE_SUCCESS;
 }
 
+GPU::~GPU() {
+	cleanup();
+}
+
 void GPU::cleanup() {
+	// Clear all tasks first
+	clearAllTasks();
+
+	// Shutdown context
+	if (context) {
+		context->shutdown();
+		context.reset();
+	}
+
 	if (device != VK_NULL_HANDLE) {
 		if (descriptorPool != VK_NULL_HANDLE) {
 			vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -144,17 +168,122 @@ void GPU::cleanup() {
 	}
 }
 
-InitDeviceResult addNewDevice(const Config& config) {
+renderApi::ComputeTask* GPU::createComputeTask(const std::vector<uint32_t>& spirvCode, const std::string& name) {
+	if (device == VK_NULL_HANDLE || !context) {
+		std::cerr << "[GPU] Device not initialized!" << std::endl;
+		return nullptr;
+	}
+
+	auto task = std::make_unique<renderApi::ComputeTask>();
+	
+	if (!task->create(*context, name)) {
+		std::cerr << "[GPU] Failed to create compute task!" << std::endl;
+		return nullptr;
+	}
+
+	task->setShader(spirvCode, name);
+
+	std::lock_guard<std::mutex> lock(tasksMutex);
+	auto* ptr = task.get();
+	computeTasks.push_back(std::move(task));
+
+	return ptr;
+}
+
+renderApi::GraphicsTask* GPU::createGraphicsTask(renderApi::RenderWindow* window, const std::string& name) {
+	if (device == VK_NULL_HANDLE || !context) {
+		std::cerr << "[GPU] Device not initialized!" << std::endl;
+		return nullptr;
+	}
+
+	if (!window) {
+		std::cerr << "[GPU] RenderWindow is null!" << std::endl;
+		return nullptr;
+	}
+
+	auto task = std::make_unique<renderApi::GraphicsTask>();
+	
+	if (!task->create(*context, *window, name)) {
+		std::cerr << "[GPU] Failed to create graphics task!" << std::endl;
+		return nullptr;
+	}
+
+	std::lock_guard<std::mutex> lock(tasksMutex);
+	auto* ptr = task.get();
+	graphicsTasks.push_back(std::move(task));
+
+	return ptr;
+}
+
+void GPU::removeComputeTask(const std::string& name) {
+	std::lock_guard<std::mutex> lock(tasksMutex);
+
+	auto it = std::remove_if(computeTasks.begin(), computeTasks.end(),
+		[&name](const std::unique_ptr<renderApi::ComputeTask>& task) {
+			return task->getName() == name;
+		});
+
+	computeTasks.erase(it, computeTasks.end());
+}
+
+void GPU::removeGraphicsTask(const std::string& name) {
+	std::lock_guard<std::mutex> lock(tasksMutex);
+
+	auto it = std::remove_if(graphicsTasks.begin(), graphicsTasks.end(),
+		[&name](const std::unique_ptr<renderApi::GraphicsTask>& task) {
+			return task->getName() == name;
+		});
+
+	graphicsTasks.erase(it, graphicsTasks.end());
+}
+
+renderApi::ComputeTask* GPU::getComputeTask(const std::string& name) {
+	std::lock_guard<std::mutex> lock(tasksMutex);
+
+	for (auto& task : computeTasks) {
+		if (task->getName() == name) {
+			return task.get();
+		}
+	}
+
+	return nullptr;
+}
+
+renderApi::GraphicsTask* GPU::getGraphicsTask(const std::string& name) {
+	std::lock_guard<std::mutex> lock(tasksMutex);
+
+	for (auto& task : graphicsTasks) {
+		if (task->getName() == name) {
+			return task.get();
+		}
+	}
+
+	return nullptr;
+}
+
+void GPU::executeAllComputeTasks() {
+	// This is now handled by the GPU thread loop
+	// Users can also manually execute specific tasks
+}
+
+void GPU::clearAllTasks() {
+	std::lock_guard<std::mutex> lock(tasksMutex);
+	
+	computeTasks.clear();
+	graphicsTasks.clear();
+}
+
+InitDeviceResult renderApi::device::addNewDevice(const Config& config) {
 	if (!config.renderInstance || !config.vkInstance) return !config.renderInstance ? RENDER_INSTANCE_NULL : VK_INSTANCE_NULL;
 
 	auto gpu = std::make_unique<GPU>();
 
+	gpu->instance		= config.vkInstance;
 	gpu->physicalDevice = config.physicalDevice;
 	if (gpu->physicalDevice == VK_NULL_HANDLE) {
 		gpu->physicalDevice = selectBestPhysicalDevice(config.vkInstance);
-		if (gpu->physicalDevice == VK_NULL_HANDLE) {
+		if (gpu->physicalDevice == VK_NULL_HANDLE)
 			return NO_PHYSICAL_DEVICE_FOUND;
-		}
 	}
 
 	auto families	   = findQueueFamilies(gpu->physicalDevice);
@@ -163,7 +292,8 @@ InitDeviceResult addNewDevice(const Config& config) {
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 	std::vector<int>					 uniqueQueueFamilies;
 
-	if (families.graphicsFamily >= 0) uniqueQueueFamilies.push_back(families.graphicsFamily);
+	if (families.graphicsFamily >= 0)
+		uniqueQueueFamilies.push_back(families.graphicsFamily);
 	if (families.computeFamily >= 0 &&
 		std::find(uniqueQueueFamilies.begin(), uniqueQueueFamilies.end(), families.computeFamily) == uniqueQueueFamilies.end())
 		uniqueQueueFamilies.push_back(families.computeFamily);
@@ -193,9 +323,12 @@ InitDeviceResult addNewDevice(const Config& config) {
 	if (result != VK_SUCCESS) {
 		return VK_CREATE_DEVICE_FAILED;
 	}
-	if (families.graphicsFamily >= 0) vkGetDeviceQueue(gpu->device, families.graphicsFamily, 0, &gpu->graphicsQueue);
-	if (families.computeFamily >= 0) vkGetDeviceQueue(gpu->device, families.computeFamily, 0, &gpu->computeQueue);
-	if (families.transferFamily >= 0) vkGetDeviceQueue(gpu->device, families.transferFamily, 0, &gpu->transferQueue);
+	if (families.graphicsFamily >= 0)
+		vkGetDeviceQueue(gpu->device, families.graphicsFamily, 0, &gpu->graphicsQueue);
+	if (families.computeFamily >= 0)
+		vkGetDeviceQueue(gpu->device, families.computeFamily, 0, &gpu->computeQueue);
+	if (families.transferFamily >= 0)
+		vkGetDeviceQueue(gpu->device, families.transferFamily, 0, &gpu->transferQueue);
 
 	auto initResult = finishDeviceInitialization(*gpu);
 	if (initResult != INIT_DEVICE_SUCCESS)

@@ -1,10 +1,11 @@
 #include "buffer.hpp"
 
-#include <algorithm>
+#include "../device/renderDevice.hpp"
+
 #include <cstring>
 #include <iostream>
+#include <vulkan/vulkan_core.h>
 
-// Forward declaration - will be defined in gpuContext.hpp
 namespace renderApi {
 	class GPUContext {
 	  public:
@@ -113,8 +114,8 @@ bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsa
 		return false;
 	}
 
-	VkDevice	 device = context_->getDevice();
-	device::GPU& gpu	= context_->getGPU();
+	VkDevice	 vkDevice = context_->getDevice();
+	device::GPU& gpu	  = context_->getGPU();
 
 	// Create buffer
 	VkBufferCreateInfo bufferInfo{};
@@ -123,14 +124,14 @@ bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsa
 	bufferInfo.usage	   = getVkUsageFlags();
 	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer_) != VK_SUCCESS) {
+	if (vkCreateBuffer(vkDevice, &bufferInfo, nullptr, &buffer_) != VK_SUCCESS) {
 		std::cerr << "Failed to create buffer" << std::endl;
 		return false;
 	}
 
 	// Get memory requirements
 	VkMemoryRequirements memRequirements;
-	vkGetBufferMemoryRequirements(device, buffer_, &memRequirements);
+	vkGetBufferMemoryRequirements(vkDevice, buffer_, &memRequirements);
 
 	// Allocate memory
 	VkMemoryAllocateInfo allocInfo{};
@@ -146,22 +147,22 @@ bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsa
 		allocInfo.pNext = &flagsInfo;
 	}
 
-	if (vkAllocateMemory(device, &allocInfo, nullptr, &memory_) != VK_SUCCESS) {
+	if (vkAllocateMemory(vkDevice, &allocInfo, nullptr, &memory_) != VK_SUCCESS) {
 		std::cerr << "Failed to allocate buffer memory" << std::endl;
-		vkDestroyBuffer(device, buffer_, nullptr);
+		vkDestroyBuffer(vkDevice, buffer_, nullptr);
 		buffer_ = VK_NULL_HANDLE;
 		return false;
 	}
 
 	// Bind memory
-	vkBindBufferMemory(device, buffer_, memory_, 0);
+	vkBindBufferMemory(vkDevice, buffer_, memory_, 0);
 
 	// Get device address if supported
 	if (getVkUsageFlags() & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 		VkBufferDeviceAddressInfo addressInfo{};
 		addressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 		addressInfo.buffer = buffer_;
-		deviceAddress_	   = vkGetBufferDeviceAddress(device, &addressInfo);
+		deviceAddress_	   = vkGetBufferDeviceAddress(vkDevice, &addressInfo);
 	}
 
 	// Persistent mapping for dynamic/stream buffers
@@ -176,19 +177,19 @@ bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsa
 void Buffer::destroy() {
 	if (!context_ || buffer_ == VK_NULL_HANDLE) return;
 
-	VkDevice device = context_->getDevice();
+	VkDevice vkDevice = context_->getDevice();
 
 	if (persistentlyMapped_ && mappedPtr_) {
 		unmap();
 	}
 
 	if (memory_ != VK_NULL_HANDLE) {
-		vkFreeMemory(device, memory_, nullptr);
+		vkFreeMemory(vkDevice, memory_, nullptr);
 		memory_ = VK_NULL_HANDLE;
 	}
 
 	if (buffer_ != VK_NULL_HANDLE) {
-		vkDestroyBuffer(device, buffer_, nullptr);
+		vkDestroyBuffer(vkDevice, buffer_, nullptr);
 		buffer_ = VK_NULL_HANDLE;
 	}
 
@@ -292,8 +293,8 @@ void* Buffer::map() {
 	if (!isValid()) return nullptr;
 	if (mappedPtr_) return mappedPtr_;
 
-	VkDevice device = context_->getDevice();
-	if (vkMapMemory(device, memory_, 0, size_, 0, &mappedPtr_) != VK_SUCCESS) {
+	VkDevice vkDevice = context_->getDevice();
+	if (vkMapMemory(vkDevice, memory_, 0, size_, 0, &mappedPtr_) != VK_SUCCESS) {
 		std::cerr << "Failed to map buffer memory" << std::endl;
 		return nullptr;
 	}
@@ -303,8 +304,8 @@ void* Buffer::map() {
 void Buffer::unmap() {
 	if (!isValid() || !mappedPtr_) return;
 
-	VkDevice device = context_->getDevice();
-	vkUnmapMemory(device, memory_);
+	VkDevice vkDevice = context_->getDevice();
+	vkUnmapMemory(vkDevice, memory_);
 	mappedPtr_ = nullptr;
 }
 

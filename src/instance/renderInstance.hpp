@@ -1,7 +1,7 @@
 #ifndef RENDER_INSTANCE_HPP
 #define RENDER_INSTANCE_HPP
 
-#include "../device/renderDevice.hpp"
+#include "renderDevice.hpp"
 
 #include <cstdint>
 #include <memory>

@@ -13,8 +13,8 @@ namespace renderApi {
 	struct SwapChainConfig {
 		uint32_t		 width			 = 1280;
 		uint32_t		 height			 = 720;
-		uint32_t		 imageCount		 = 3;						 // Triple buffering by default
-		VkPresentModeKHR presentMode	 = VK_PRESENT_MODE_FIFO_KHR; // VSync on
+		uint32_t		 imageCount		 = 3;
+		VkPresentModeKHR presentMode	 = VK_PRESENT_MODE_FIFO_KHR;
 		VkFormat		 preferredFormat = VK_FORMAT_B8G8R8A8_UNORM;
 		VkColorSpaceKHR	 colorSpace		 = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	};
@@ -64,6 +64,6 @@ namespace renderApi {
 		VkExtent2D		   chooseExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height);
 	};
 
-} // namespace renderApi
+}
 
 #endif

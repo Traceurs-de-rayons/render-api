@@ -4,11 +4,10 @@
 #include "buffer.hpp"
 #include "descriptors.hpp"
 #include "renderDevice.hpp"
-#include "pipeline.hpp"
 
 #include <cstddef>
-#include <vulkan/vulkan_core.h>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
 namespace renderApi {
 
@@ -34,8 +33,7 @@ namespace renderApi {
 		VkQueue			   getTransferQueue() const { return gpu_ ? gpu_->transferQueue : VK_NULL_HANDLE; }
 		VkCommandPool	   getCommandPool() const { return gpu_ ? gpu_->commandPool : VK_NULL_HANDLE; }
 		VkDescriptorPool   getDescriptorPool() const { return gpu_ ? gpu_->descriptorPool : VK_NULL_HANDLE; }
-		VkCommandBuffer beginOneTimeCommands();
-
+		VkCommandBuffer	   beginOneTimeCommands();
 
 		void endOneTimeCommands(VkCommandBuffer cmd);
 		void waitIdle() const;
@@ -55,9 +53,6 @@ namespace renderApi {
 		Buffer createUniformBuffer(size_t size);
 		Buffer createStorageBuffer(size_t size, BufferUsage usage = BufferUsage::STATIC);
 		Buffer createStagingBuffer(size_t size);
-
-		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);
-		ComputePipeline	 createComputePipeline(const ComputePipelineConfig& config);
 
 	  private:
 		device::GPU* gpu_;

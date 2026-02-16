@@ -4,12 +4,21 @@
 # include <atomic>
 # include <cstdint>
 # include <future>
+# include <memory>
+# include <mutex>
 # include <string>
 # include <vector>
 # include <vulkan/vulkan_core.h>
 
 namespace renderApi::instance {
 	class RenderInstance;
+}
+
+namespace renderApi {
+	class ComputeTask;
+	class GraphicsTask;
+	class GPUContext;
+	class RenderWindow;
 }
 
 namespace renderApi::device {
@@ -53,6 +62,7 @@ namespace renderApi::device {
 	};
 
 	struct GPU {
+		VkInstance						 instance		= VK_NULL_HANDLE;
 		VkPhysicalDevice				 physicalDevice = VK_NULL_HANDLE;
 		VkDevice						 device			= VK_NULL_HANDLE;
 		VkQueue							 graphicsQueue	= VK_NULL_HANDLE;
@@ -64,8 +74,25 @@ namespace renderApi::device {
 		std::atomic<bool>				 running		= false;
 		std::future<gpuLoopThreadResult> finishCode;
 
-		~GPU() { cleanup(); }
+		// Context wrapper
+		std::unique_ptr<renderApi::GPUContext> context;
 
+		// Task management
+		std::vector<std::unique_ptr<renderApi::ComputeTask>>  computeTasks;
+		std::vector<std::unique_ptr<renderApi::GraphicsTask>> graphicsTasks;
+		std::mutex											   tasksMutex;
+
+		// Task management methods
+		renderApi::ComputeTask*	 createComputeTask(const std::vector<uint32_t>& spirvCode, const std::string& name = "");
+		renderApi::GraphicsTask* createGraphicsTask(renderApi::RenderWindow* window, const std::string& name = "");
+		void					 removeComputeTask(const std::string& name);
+		void					 removeGraphicsTask(const std::string& name);
+		renderApi::ComputeTask*	 getComputeTask(const std::string& name);
+		renderApi::GraphicsTask* getGraphicsTask(const std::string& name);
+		void					 executeAllComputeTasks();
+		void					 clearAllTasks();
+
+		~GPU();
 		void cleanup();
 	};
 

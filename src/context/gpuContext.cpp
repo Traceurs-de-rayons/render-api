@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <vulkan/vulkan_core.h>
 
 using namespace renderApi;
 
@@ -142,7 +143,6 @@ bool GPUContext::submitCompute(VkCommandBuffer				   cmd,
 	return vkQueueSubmit(gpu_->computeQueue, 1, &submitInfo, fence) == VK_SUCCESS;
 }
 
-// Convenience buffer creators
 Buffer GPUContext::createBuffer(size_t size, BufferType type, BufferUsage usage) {
 	Buffer buffer;
 	buffer.create(*this, size, type, usage);
@@ -158,15 +158,3 @@ Buffer GPUContext::createUniformBuffer(size_t size) { return createBuffer(size, 
 Buffer GPUContext::createStorageBuffer(size_t size, BufferUsage usage) { return createBuffer(size, BufferType::STORAGE, usage); }
 
 Buffer GPUContext::createStagingBuffer(size_t size) { return createBuffer(size, BufferType::STAGING, BufferUsage::STREAM); }
-
-GraphicsPipeline GPUContext::createGraphicsPipeline(const GraphicsPipelineConfig& config) {
-	GraphicsPipeline pipeline;
-	pipeline.create(*this, config);
-	return pipeline;
-}
-
-ComputePipeline GPUContext::createComputePipeline(const ComputePipelineConfig& config) {
-	ComputePipeline pipeline;
-	pipeline.create(*this, config);
-	return pipeline;
-}

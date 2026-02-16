@@ -6,9 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+find_package(Vulkan REQUIRED)
+find_package(SDL2 REQUIRED)
+
 file(GLOB_RECURSE RENDER_API_SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
 add_library(render-api STATIC ${RENDER_API_SOURCES})
+target_link_libraries(render-api PUBLIC Vulkan::Vulkan SDL2::SDL2)
 
 file(GLOB SRC_CHILDREN RELATIVE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/*)
 set(SRC_INCLUDE_DIRS)
@@ -36,4 +40,10 @@ install(TARGETS render-api
 )
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-option(BUILD_RENDER_API_EXAMPLES "Build examples for render-api" OFF)
+option(BUILD_RENDER_API_EXAMPLES "Build examples for render-api" ON)
+
+if(BUILD_RENDER_API_EXAMPLES)
+	add_executable(render-api-example examples/main.cpp)
+	target_link_libraries(render-api-example PRIVATE render-api)
+	target_compile_features(render-api-example PRIVATE cxx_std_17)
+endif()
