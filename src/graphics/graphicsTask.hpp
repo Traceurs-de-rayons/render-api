@@ -16,7 +16,6 @@ namespace renderApi {
 
 	class GPUContext;
 
-	// Shader stage enum
 	enum class ShaderStage {
 		Vertex,
 		Fragment,
@@ -62,6 +61,7 @@ namespace renderApi {
 
 		// Multiple shaders support
 		std::map<ShaderStage, ShaderModule> shaders_;
+		std::map<ShaderStage, bool> shadersEnabled_;  // Stage -> enabled/disabled
 
 		// Pipeline
 		VkPipeline		 pipeline_;
@@ -112,12 +112,17 @@ namespace renderApi {
 		void destroy();
 
 		// Shader management - dynamic add/remove/update
-		GraphicsTask& addShader(ShaderStage stage, const std::vector<uint32_t>& spirvCode, 
+		GraphicsTask& addShader(ShaderStage stage, const std::vector<uint32_t>& spirvCode,
 								const std::string& name = "", const std::string& entryPoint = "main");
 		GraphicsTask& removeShader(ShaderStage stage);
 		GraphicsTask& updateShader(ShaderStage stage, const std::vector<uint32_t>& spirvCode);
 		bool hasShader(ShaderStage stage) const;
 		void clearShaders();
+
+		// Enable/disable specific shaders (requires rebuild)
+		GraphicsTask& enableShader(ShaderStage stage);
+		GraphicsTask& disableShader(ShaderStage stage);
+		bool isShaderEnabled(ShaderStage stage) const;
 
 		// Buffer bindings
 		GraphicsTask& bindVertexBuffer(uint32_t binding, Buffer& buffer, uint32_t stride);

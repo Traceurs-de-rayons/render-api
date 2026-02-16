@@ -112,6 +112,7 @@ GraphicsTask& GraphicsTask::addShader(ShaderStage stage, const std::vector<uint3
 	}
 
 	shaders_[stage] = ShaderModule(stage, spirvCode, name, entryPoint);
+	shadersEnabled_[stage] = true;  // Enabled by default
 	std::cout << "[" << name_ << "] Added shader stage: " << static_cast<int>(stage) << std::endl;
 
 	return *this;
@@ -171,6 +172,56 @@ void GraphicsTask::clearShaders() {
 
 	destroyShaderModules();
 	shaders_.clear();
+	shadersEnabled_.clear();
+}
+
+GraphicsTask& GraphicsTask::enableShader(ShaderStage stage) {
+	auto it = shaders_.find(stage);
+	if (it == shaders_.end()) {
+		std::cerr << "[" << name_ << "] Shader stage " << static_cast<int>(stage) << " not found!" << std::endl;
+		return *this;
+	}
+
+	shadersEnabled_[stage] = true;
+	std::cout << "[" << name_ << "] Enabled shader stage " << static_cast<int>(stage) << std::endl;
+
+	// Rebuild if already built
+	if (built_) {
+		std::cout << "[" << name_ << "] Rebuilding pipeline..." << std::endl;
+		rebuild();
+	}
+
+	return *this;
+}
+
+GraphicsTask& GraphicsTask::disableShader(ShaderStage stage) {
+	auto it = shaders_.find(stage);
+	if (it == shaders_.end()) {
+		std::cerr << "[" << name_ << "] Shader stage " << static_cast<int>(stage) << " not found!" << std::endl;
+		return *this;
+	}
+
+	// Cannot disable required shaders
+	if (stage == ShaderStage::Vertex || stage == ShaderStage::Fragment) {
+		std::cerr << "[" << name_ << "] Cannot disable required shader stage (Vertex/Fragment)!" << std::endl;
+		return *this;
+	}
+
+	shadersEnabled_[stage] = false;
+	std::cout << "[" << name_ << "] Disabled shader stage " << static_cast<int>(stage) << std::endl;
+
+	// Rebuild if already built
+	if (built_) {
+		std::cout << "[" << name_ << "] Rebuilding pipeline..." << std::endl;
+		rebuild();
+	}
+
+	return *this;
+}
+
+bool GraphicsTask::isShaderEnabled(ShaderStage stage) const {
+	auto it = shadersEnabled_.find(stage);
+	return (it != shadersEnabled_.end()) ? it->second : true;  // Default enabled
 }
 
 GraphicsTask& GraphicsTask::bindVertexBuffer(uint32_t binding, Buffer& buffer, uint32_t stride) {
@@ -451,9 +502,14 @@ bool GraphicsTask::createPipeline(VkRenderPass renderPass) {
 		return false;
 	}
 
-	// Shader stages
+	// Shader stages (only include enabled shaders)
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 	for (const auto& [stage, shader] : shaders_) {
+		// Skip disabled shaders
+		if (!isShaderEnabled(stage)) {
+			continue;
+		}
+		
 		VkPipelineShaderStageCreateInfo stageInfo{};
 		stageInfo.sType	 = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		stageInfo.stage	 = getVulkanStage(stage);
