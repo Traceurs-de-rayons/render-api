@@ -16,7 +16,7 @@ namespace renderApi {
 		VkCommandBuffer beginOneTimeCommands();
 		void			endOneTimeCommands(VkCommandBuffer cmd);
 	};
-} // namespace renderApi
+}
 
 using namespace renderApi;
 

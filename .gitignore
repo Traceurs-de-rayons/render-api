@@ -1,0 +1,12 @@
+# clang
+.clangd
+.clang-format
+
+#cache
+.cache/*
+
+# zed
+.zed/*
+
+# cmake
+build/*

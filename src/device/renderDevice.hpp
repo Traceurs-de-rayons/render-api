@@ -74,23 +74,26 @@ namespace renderApi::device {
 		std::atomic<bool>				 running		= false;
 		std::future<gpuLoopThreadResult> finishCode;
 
-		// Context wrapper
-		std::unique_ptr<renderApi::GPUContext> context;
+		// std::vector<renderApi::GpuTask*>	 GpuTasks; // gpuTask = 1 command buffer (qui contien x pipelines)
 
-		// Task management
-		std::vector<std::unique_ptr<renderApi::ComputeTask>>  computeTasks;
-		std::vector<std::unique_ptr<renderApi::GraphicsTask>> graphicsTasks;
-		std::mutex											   tasksMutex;
+		/*	1. Logical device (déjà fait)
+			2. Command pool
+			3. Descriptor set layouts
+			4. Pipeline layout
+			5. Pipeline
+			6. Descriptor pool
+			7. Descriptor sets
+			8. Buffers / images (ressources)
+			9. Record command buffer (bind pipeline + bind descriptors + draw/dispatch)*/
 
-		// Task management methods
-		renderApi::ComputeTask*	 createComputeTask(const std::vector<uint32_t>& spirvCode, const std::string& name = "");
-		renderApi::GraphicsTask* createGraphicsTask(renderApi::RenderWindow* window, const std::string& name = "");
-		void					 removeComputeTask(const std::string& name);
-		void					 removeGraphicsTask(const std::string& name);
-		renderApi::ComputeTask*	 getComputeTask(const std::string& name);
-		renderApi::GraphicsTask* getGraphicsTask(const std::string& name);
-		void					 executeAllComputeTasks();
-		void					 clearAllTasks();
+		// renderApi::ComputeTask*	 createComputeTask(const std::vector<uint32_t>& spirvCode, const std::string& name = "");
+		// renderApi::GraphicsTask* createGraphicsTask(renderApi::RenderWindow* window, const std::string& name = "");
+		// void					 removeComputeTask(const std::string& name);
+		// void					 removeGraphicsTask(const std::string& name);
+		// renderApi::ComputeTask*	 getComputeTask(const std::string& name);
+		// renderApi::GraphicsTask* getGraphicsTask(const std::string& name);
+		// void					 executeAllComputeTasks();
+		// void					 clearAllTasks();
 
 		~GPU();
 		void cleanup();
