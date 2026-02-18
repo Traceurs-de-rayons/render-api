@@ -1,47 +1,16 @@
 #ifndef RENDER_API_HPP
 #define RENDER_API_HPP
 
-#include "buffer.hpp"
 #include "renderDevice.hpp"
 #include "renderInstance.hpp"
 
-#include <cstddef>
-#include <cstdint>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
+#define INIT_RENDER_API renderApi::Api _renderApiInstance
+
 namespace renderApi {
-
-	namespace detail {
-		inline std::vector<instance::RenderInstance> instances_;
-	}
-
-	// vk instance
-	instance::InitInstanceResult			initNewInstance(const instance::Config& config);
-	std::vector<instance::RenderInstance>&  getInstances();
-	// add un clean
-
-
-	// vk device
-	device::InitDeviceResult				addDevice(const device::Config& config);
-	std::vector<device::PhysicalDeviceInfo> enumerateDevices(VkInstance instance);
-	VkPhysicalDevice						selectBestDevice(VkInstance instance);
-	// add un clean
-
-	// Buffer creation helpers
-	Buffer									createBuffer(size_t size, BufferType type, BufferUsage usage = BufferUsage::STATIC, size_t gpuIndex = 0);
-	Buffer									createVertexBuffer(size_t size, BufferUsage usage = BufferUsage::STATIC, size_t gpuIndex = 0);
-	Buffer									createIndexBuffer(size_t size, BufferUsage usage = BufferUsage::STATIC, size_t gpuIndex = 0);
-	Buffer									createUniformBuffer(size_t size, BufferUsage usage = BufferUsage::DYNAMIC, size_t gpuIndex = 0);
-	Buffer									createStorageBuffer(size_t size, BufferUsage usage = BufferUsage::STATIC, size_t gpuIndex = 0);
-	Buffer									createStagingBuffer(size_t size, size_t gpuIndex = 0);
-
-	// GPU
-	device::GPU*							getGPU(size_t index = 0);
-	size_t									getGPUCount();
-
-	std::vector<uint32_t>					loadSPIRV(const std::string& filename);
 
 	struct InitResult {
 		bool						 success;
@@ -53,8 +22,32 @@ namespace renderApi {
 		operator bool() const { return success; }
 	};
 
-	InitResult quickInit(const std::string& appName = "RenderApp", bool enableValidation = true,
-						 const std::vector<const char*>& windowExtensions = {});
-	instance::RenderInstance* getInstance();
+	class Api {
+		private:
+			void	cleanup();
+		public:
+			Api() = default;
+			~Api() { cleanup(); }
+
+			Api(const Api&)			   = delete;
+			Api& operator=(const Api&) = delete;
+			Api(Api&&)				   = delete;
+			Api& operator=(Api&&)	   = delete;
+	};
+
+	namespace {
+		inline std::vector<instance::RenderInstance>& getInstancesVector() {
+			static std::vector<instance::RenderInstance> instances_;
+			return instances_;
+		}
+	}
+
+	// vk instance
+	instance::InitInstanceResult 			initNewInstance(const instance::Config& config);
+	std::vector<instance::RenderInstance>&	getInstances();
+	instance::RenderInstance*				getInstance(int index);
+	instance::RenderInstance*				getInstance(std::string name);
+
 }
+
 #endif

@@ -1,31 +1,26 @@
 #ifndef RENDER_DEVICE_HPP
-# define RENDER_DEVICE_HPP
+#define RENDER_DEVICE_HPP
 
-# include <atomic>
-# include <cstdint>
-# include <future>
-# include <memory>
-# include <mutex>
-# include <string>
-# include <vector>
-# include <vulkan/vulkan_core.h>
+#include "gpuTask.hpp"
+#include "utils.hpp"
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <future>
+#include <string>
+#include <vector>
+#include <vulkan/vulkan_core.h>
 
 namespace renderApi::instance {
 	class RenderInstance;
-}
-
-namespace renderApi {
-	class ComputeTask;
-	class GraphicsTask;
-	class GPUContext;
-	class RenderWindow;
 }
 
 namespace renderApi::device {
 
 	enum gpuLoopThreadResult { THEARD_LOOP_SUCCESS = 0 };
 
-	enum InitDeviceResult {
+	enum InitDeviceResult : int {
 		INIT_DEVICE_SUCCESS		 = 0,
 		EXTENTIONS_NOT_AVAILABLE = 1,
 		VK_GET_EXTENTION_FAILED	 = 2,
@@ -37,12 +32,11 @@ namespace renderApi::device {
 	};
 
 	struct Config {
-		instance::RenderInstance* renderInstance = nullptr;
-		VkInstance				  vkInstance	 = nullptr;
-		VkPhysicalDevice		  physicalDevice = VK_NULL_HANDLE;
-		uint32_t				  graphics		 = 0;
-		uint32_t				  compute		 = 0;
-		uint32_t				  transfer		 = 0;
+		VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+		uint32_t		 graphics		= 0;
+		uint32_t		 compute		= 0;
+		uint32_t		 transfer		= 0;
+		std::string		 name			= generateRandomString();
 	};
 
 	struct PhysicalDeviceInfo {
@@ -62,50 +56,31 @@ namespace renderApi::device {
 	};
 
 	struct GPU {
-		VkInstance						 instance		= VK_NULL_HANDLE;
-		VkPhysicalDevice				 physicalDevice = VK_NULL_HANDLE;
-		VkDevice						 device			= VK_NULL_HANDLE;
-		VkQueue							 graphicsQueue	= VK_NULL_HANDLE;
-		VkQueue							 computeQueue	= VK_NULL_HANDLE;
-		VkQueue							 transferQueue	= VK_NULL_HANDLE;
-		QueueFamilies					 queueFamilies;
-		VkCommandPool					 commandPool	= VK_NULL_HANDLE;
-		VkDescriptorPool				 descriptorPool = VK_NULL_HANDLE;
-		std::atomic<bool>				 running		= false;
-		std::future<gpuLoopThreadResult> finishCode;
-
-		// std::vector<renderApi::GpuTask*>	 GpuTasks; // gpuTask = 1 command buffer (qui contien x pipelines)
-
-		/*	1. Logical device (déjà fait)
-			2. Command pool
-			3. Descriptor set layouts
-			4. Pipeline layout
-			5. Pipeline
-			6. Descriptor pool
-			7. Descriptor sets
-			8. Buffers / images (ressources)
-			9. Record command buffer (bind pipeline + bind descriptors + draw/dispatch)*/
-
-		// renderApi::ComputeTask*	 createComputeTask(const std::vector<uint32_t>& spirvCode, const std::string& name = "");
-		// renderApi::GraphicsTask* createGraphicsTask(renderApi::RenderWindow* window, const std::string& name = "");
-		// void					 removeComputeTask(const std::string& name);
-		// void					 removeGraphicsTask(const std::string& name);
-		// renderApi::ComputeTask*	 getComputeTask(const std::string& name);
-		// renderApi::GraphicsTask* getGraphicsTask(const std::string& name);
-		// void					 executeAllComputeTasks();
-		// void					 clearAllTasks();
+		VkInstance								  instance		 = VK_NULL_HANDLE;
+		VkPhysicalDevice						  physicalDevice = VK_NULL_HANDLE;
+		VkDevice								  device		 = VK_NULL_HANDLE;
+		std::vector<VkQueue>					  graphicsQueues;
+		std::vector<VkQueue>					  computeQueues;
+		std::vector<VkQueue>					  transferQueues;
+		QueueFamilies							  queueFamilies;
+		VkCommandPool							  commandPool = VK_NULL_HANDLE;
+		std::atomic<bool>						  running	  = false;
+		std::future<gpuLoopThreadResult>		  finishCode;
+		std::vector<renderApi::gpuTask::GpuTask*> GpuTasks;
+		std::string								  name;
 
 		~GPU();
 		void cleanup();
+		VkCommandBuffer beginOneTimeCommands();
+		void endOneTimeCommands(VkCommandBuffer commandBuffer);
 	};
 
-	InitDeviceResult	addNewDevice(const device::Config& config);
-	gpuLoopThreadResult gpuThreadLoop(renderApi::device::GPU& gpu);
+	gpuLoopThreadResult				gpuThreadLoop(renderApi::device::GPU& gpu);
 	std::vector<PhysicalDeviceInfo> enumeratePhysicalDevices(VkInstance instance);
 	VkPhysicalDevice				selectBestPhysicalDevice(VkInstance instance);
 	InitDeviceResult				finishDeviceInitialization(GPU& gpu);
-	QueueFamilies findQueueFamilies(VkPhysicalDevice device);
-	uint32_t	  findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
-};
+	QueueFamilies					findQueueFamilies(VkPhysicalDevice device);
+	uint32_t						findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+}; // namespace renderApi::device
 
 #endif

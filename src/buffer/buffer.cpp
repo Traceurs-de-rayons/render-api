@@ -6,28 +6,16 @@
 #include <iostream>
 #include <vulkan/vulkan_core.h>
 
-namespace renderApi {
-	class GPUContext {
-	  public:
-		device::GPU& getGPU() { return *gpu_; }
-		VkDevice	 getDevice() { return gpu_->device; }
-		device::GPU* gpu_;
-
-		VkCommandBuffer beginOneTimeCommands();
-		void			endOneTimeCommands(VkCommandBuffer cmd);
-	};
-}
-
 using namespace renderApi;
 
 Buffer::Buffer()
-	: context_(nullptr), buffer_(VK_NULL_HANDLE), memory_(VK_NULL_HANDLE), deviceAddress_(0), size_(0), type_(BufferType::VERTEX),
+	: gpu_(nullptr), buffer_(VK_NULL_HANDLE), memory_(VK_NULL_HANDLE), deviceAddress_(0), size_(0), type_(BufferType::VERTEX),
 	  usage_(BufferUsage::STATIC), mappedPtr_(nullptr), persistentlyMapped_(false) {}
 
 Buffer::~Buffer() { destroy(); }
 
 Buffer::Buffer(Buffer&& other) noexcept
-	: context_(other.context_), buffer_(other.buffer_), memory_(other.memory_), deviceAddress_(other.deviceAddress_), size_(other.size_),
+	: gpu_(other.gpu_), buffer_(other.buffer_), memory_(other.memory_), deviceAddress_(other.deviceAddress_), size_(other.size_),
 	  type_(other.type_), usage_(other.usage_), mappedPtr_(other.mappedPtr_), persistentlyMapped_(other.persistentlyMapped_) {
 	other.buffer_	 = VK_NULL_HANDLE;
 	other.memory_	 = VK_NULL_HANDLE;
@@ -38,7 +26,7 @@ Buffer::Buffer(Buffer&& other) noexcept
 Buffer& Buffer::operator=(Buffer&& other) noexcept {
 	if (this != &other) {
 		destroy();
-		context_			= other.context_;
+		gpu_				= other.gpu_;
 		buffer_				= other.buffer_;
 		memory_				= other.memory_;
 		deviceAddress_		= other.deviceAddress_;
@@ -82,7 +70,6 @@ VkBufferUsageFlags Buffer::getVkUsageFlags() const {
 		break;
 	}
 
-	// Add shader device address flag for buffers that might need it
 	if (type_ == BufferType::STORAGE || type_ == BufferType::VERTEX || type_ == BufferType::INDEX) {
 		flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	}
@@ -101,10 +88,10 @@ VkMemoryPropertyFlags Buffer::getMemoryFlags() const {
 	return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 }
 
-bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsage usage) {
+bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage usage) {
 	destroy();
 
-	context_ = &context;
+	gpu_	 = gpu;
 	size_	 = size;
 	type_	 = type;
 	usage_	 = usage;
@@ -114,10 +101,8 @@ bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsa
 		return false;
 	}
 
-	VkDevice	 vkDevice = context_->getDevice();
-	device::GPU& gpu	  = context_->getGPU();
+	VkDevice	 vkDevice = gpu->device;
 
-	// Create buffer
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType	   = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferInfo.size		   = size;
@@ -137,7 +122,7 @@ bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsa
 	VkMemoryAllocateInfo allocInfo{};
 	allocInfo.sType			  = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize  = memRequirements.size;
-	allocInfo.memoryTypeIndex = device::findMemoryType(gpu.physicalDevice, memRequirements.memoryTypeBits, getMemoryFlags());
+	allocInfo.memoryTypeIndex = device::findMemoryType(gpu->physicalDevice, memRequirements.memoryTypeBits, getMemoryFlags());
 
 	// Add device address allocation flag if needed
 	VkMemoryAllocateFlagsInfo flagsInfo{};
@@ -175,9 +160,9 @@ bool Buffer::create(GPUContext& context, size_t size, BufferType type, BufferUsa
 }
 
 void Buffer::destroy() {
-	if (!context_ || buffer_ == VK_NULL_HANDLE) return;
+	if (!gpu_ || buffer_ == VK_NULL_HANDLE) return;
 
-	VkDevice vkDevice = context_->getDevice();
+	VkDevice vkDevice = gpu_->device;
 
 	if (persistentlyMapped_ && mappedPtr_) {
 		unmap();
@@ -203,10 +188,10 @@ bool Buffer::resize(size_t newSize) {
 
 	BufferType	oldType	   = type_;
 	BufferUsage oldUsage   = usage_;
-	GPUContext* oldContext = context_;
+	device::GPU* oldGpu = gpu_;
 
 	destroy();
-	return create(*oldContext, newSize, oldType, oldUsage);
+	return create(oldGpu, newSize, oldType, oldUsage);
 }
 
 bool Buffer::upload(const void* data, size_t size, size_t offset) {
@@ -227,7 +212,7 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 
 	// For device-local buffers, use staging
 	Buffer staging;
-	if (!staging.create(*context_, size, BufferType::STAGING, BufferUsage::STREAM)) {
+	if (!staging.create(gpu_, size, BufferType::STAGING, BufferUsage::STREAM)) {
 		return false;
 	}
 
@@ -236,7 +221,7 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 	staging.unmap();
 
 	// Copy buffer
-	VkCommandBuffer cmd = context_->beginOneTimeCommands();
+	VkCommandBuffer cmd = gpu_->beginOneTimeCommands();
 
 	VkBufferCopy copyRegion{};
 	copyRegion.srcOffset = 0;
@@ -244,7 +229,7 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 	copyRegion.size		 = size;
 	vkCmdCopyBuffer(cmd, staging.getHandle(), buffer_, 1, &copyRegion);
 
-	context_->endOneTimeCommands(cmd);
+	gpu_->endOneTimeCommands(cmd);
 
 	return true;
 }
@@ -267,12 +252,12 @@ bool Buffer::download(void* data, size_t size, size_t offset) {
 
 	// For device-local buffers, use staging
 	Buffer staging;
-	if (!staging.create(*context_, size, BufferType::STAGING, BufferUsage::STREAM)) {
+	if (!staging.create(gpu_, size, BufferType::STAGING, BufferUsage::STREAM)) {
 		return false;
 	}
 
 	// Copy to staging
-	VkCommandBuffer cmd = context_->beginOneTimeCommands();
+	VkCommandBuffer cmd = gpu_->beginOneTimeCommands();
 
 	VkBufferCopy copyRegion{};
 	copyRegion.srcOffset = offset;
@@ -280,7 +265,7 @@ bool Buffer::download(void* data, size_t size, size_t offset) {
 	copyRegion.size		 = size;
 	vkCmdCopyBuffer(cmd, buffer_, staging.getHandle(), 1, &copyRegion);
 
-	context_->endOneTimeCommands(cmd);
+	gpu_->endOneTimeCommands(cmd);
 
 	void* src = staging.map();
 	memcpy(data, src, size);
@@ -293,7 +278,7 @@ void* Buffer::map() {
 	if (!isValid()) return nullptr;
 	if (mappedPtr_) return mappedPtr_;
 
-	VkDevice vkDevice = context_->getDevice();
+	VkDevice vkDevice = gpu_->device;
 	if (vkMapMemory(vkDevice, memory_, 0, size_, 0, &mappedPtr_) != VK_SUCCESS) {
 		std::cerr << "Failed to map buffer memory" << std::endl;
 		return nullptr;
@@ -304,7 +289,7 @@ void* Buffer::map() {
 void Buffer::unmap() {
 	if (!isValid() || !mappedPtr_) return;
 
-	VkDevice vkDevice = context_->getDevice();
+	VkDevice vkDevice = gpu_->device;
 	vkUnmapMemory(vkDevice, memory_);
 	mappedPtr_ = nullptr;
 }

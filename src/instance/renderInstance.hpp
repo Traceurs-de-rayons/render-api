@@ -2,6 +2,7 @@
 #define RENDER_INSTANCE_HPP
 
 #include "renderDevice.hpp"
+#include "utils.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -12,7 +13,12 @@
 
 namespace renderApi::instance {
 
-	enum InitInstanceResult { INIT_VK_INSTANCESUCCESS = 0, EXTENTIONS_NOT_AVAILABLE = 1, VK_GET_EXTENTION_FAILED = 2, VK_CREATE_INSTANCE_FAILED = 3 };
+	enum InitInstanceResult {
+		INIT_VK_INSTANCE_SUCCESS  = 0,
+		EXTENTIONS_NOT_AVAILABLE  = 1,
+		VK_GET_EXTENTION_FAILED	  = 2,
+		VK_CREATE_INSTANCE_FAILED = 3
+	};
 
 	struct Config {
 		std::string appName		  = "Default";
@@ -20,6 +26,7 @@ namespace renderApi::instance {
 		std::string engineName	  = "Default";
 		uint32_t	engineVersion = VK_MAKE_VERSION(0, 0, 0);
 		uint32_t	apiVersion	  = VK_API_VERSION_1_3;
+		std::string instanceName  = generateRandomString();
 
 		std::vector<const char*> extensions;
 		std::vector<const char*> layers;
@@ -46,6 +53,9 @@ namespace renderApi::instance {
 		Config									  config_;
 		std::vector<std::unique_ptr<device::GPU>> gpus_;
 
+		device::QueueFamilies	 findQueueFamilies(VkPhysicalDevice device);
+		device::InitDeviceResult finishDeviceInitialization(device::GPU& gpu);
+
 	  public:
 		RenderInstance(const Config& config);
 		~RenderInstance();
@@ -56,14 +66,21 @@ namespace renderApi::instance {
 		RenderInstance(RenderInstance&&)			= default;
 		RenderInstance& operator=(RenderInstance&&) = default;
 
-		bool addGPU(std::unique_ptr<device::GPU> gpu);
+		device::InitDeviceResult addGPU(const device::Config& config = device::Config());
 
 		VkInstance										 getInstance() const { return instance_; }
 		const Config&									 getConfig() const { return config_; }
 		const std::vector<std::unique_ptr<device::GPU>>& getGPUs() const { return gpus_; }
+		device::GPU* getGPU(int index) const { return gpus_.size() <= index ? nullptr : gpus_[index].get(); }
+		device::GPU* getGPU(const std::string& name) const {
+			for (const auto& gpu : gpus_)
+				if (gpu->name == name)
+					return gpu.get();
+			return nullptr;
+		}
 	};
 
 	bool isInstanceExtensionAvailable(const char* extensionName);
-};
+}; // namespace renderApi::instance
 
 #endif

@@ -3,9 +3,9 @@
 #include "renderDevice.hpp"
 #include "renderInstance.hpp"
 
-#include <cstddef>
 #include <exception>
 #include <iostream>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
@@ -22,43 +22,34 @@ InitInstanceResult renderApi::initNewInstance(const Config& config) {
 	}
 
 	try {
-		detail::instances_.emplace_back(config);
+		getInstancesVector().emplace_back(config);
 	} catch (const std::exception& e) {
 		std::cerr << "Error initializing render instance: " << e.what() << std::endl;
 		return VK_CREATE_INSTANCE_FAILED;
 	}
-	return INIT_VK_INSTANCESUCCESS;
+	return INIT_VK_INSTANCE_SUCCESS;
 }
 
 std::vector<instance::RenderInstance>& renderApi::getInstances() {
-	return detail::instances_;
+	return getInstancesVector();
 }
 
-instance::RenderInstance* renderApi::getInstance() {
-	return detail::instances_.empty() ? nullptr : &detail::instances_[0];
+instance::RenderInstance* renderApi::getInstance(int index) {
+	auto& instances = getInstancesVector();
+	return instances.empty() ? nullptr : instances.size() ? &instances[index] : nullptr;
 }
 
-device::InitDeviceResult renderApi::addDevice(const device::Config& config) {
-	return device::addNewDevice(config);
+instance::RenderInstance* renderApi::getInstance(std::string name) {
+	auto& instances = getInstancesVector();
+
+	for (auto& instance : instances) {
+		if (instance.getConfig().instanceName == name)
+			return &instance;
+	}
+
+	return nullptr;
 }
 
-std::vector<device::PhysicalDeviceInfo> renderApi::enumerateDevices(VkInstance instance) {
-	return device::enumeratePhysicalDevices(instance);
-}
-
-VkPhysicalDevice renderApi::selectBestDevice(VkInstance instance) {
-	return device::selectBestPhysicalDevice(instance);
-}
-
-device::GPU* renderApi::getGPU(size_t index) {
-	auto* inst = getInstance();
-	if (!inst)
-		return nullptr;
-	const auto& gpus = inst->getGPUs();
-	return (index < gpus.size()) ? gpus[index].get() : nullptr;
-}
-
-size_t renderApi::getGPUCount() {
-	auto* inst = getInstance();
-	return inst ? inst->getGPUs().size() : 0;
+void renderApi::Api::cleanup() {
+	getInstancesVector().clear();
 }

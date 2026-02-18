@@ -6,7 +6,34 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Vulkan REQUIRED)
+# Custom Vulkan SDK path - use environment variable if available, otherwise use default
+if(DEFINED ENV{VULKAN_SDK})
+	set(VULKAN_SDK_PATH "$ENV{VULKAN_SDK}" CACHE PATH "Path to Vulkan SDK")
+else()
+	set(VULKAN_SDK_PATH "/home/madelvin/goinfre/vulkansdk-linux-x86_64-1.4.341.1/vulkan-1.4.341.1" CACHE PATH "Path to Vulkan SDK")
+endif()
+
+# Configure Vulkan manually to bypass system installation
+set(VULKAN_INCLUDE_DIR "${VULKAN_SDK_PATH}/x86_64/include")
+set(VULKAN_LIBRARY "${VULKAN_SDK_PATH}/x86_64/lib/libvulkan.so")
+set(VULKAN_LAYER_PATH "${VULKAN_SDK_PATH}/x86_64/share/vulkan/explicit_layer.d")
+
+if(NOT EXISTS ${VULKAN_INCLUDE_DIR})
+	message(FATAL_ERROR "Vulkan SDK not found at: ${VULKAN_SDK_PATH}\nPlease update VULKAN_SDK_PATH in CMakeLists.txt")
+endif()
+
+message(STATUS "Using custom Vulkan SDK: ${VULKAN_SDK_PATH}")
+message(STATUS "Vulkan include dir: ${VULKAN_INCLUDE_DIR}")
+message(STATUS "Vulkan library: ${VULKAN_LIBRARY}")
+message(STATUS "Vulkan layers: ${VULKAN_LAYER_PATH}")
+
+# Create Vulkan imported target manually
+add_library(Vulkan::Vulkan SHARED IMPORTED)
+set_target_properties(Vulkan::Vulkan PROPERTIES
+	IMPORTED_LOCATION "${VULKAN_LIBRARY}"
+	INTERFACE_INCLUDE_DIRECTORIES "${VULKAN_INCLUDE_DIR}"
+)
+
 find_package(SDL2 REQUIRED)
 
 file(GLOB_RECURSE RENDER_API_SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp")
@@ -46,4 +73,12 @@ if(BUILD_RENDER_API_EXAMPLES)
 	add_executable(render-api-example examples/main.cpp)
 	target_link_libraries(render-api-example PRIVATE render-api)
 	target_compile_features(render-api-example PRIVATE cxx_std_17)
+
+	# Set RPATH to include Vulkan SDK lib directory
+	set_target_properties(render-api-example PROPERTIES
+		BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+		INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+		BUILD_WITH_INSTALL_RPATH FALSE
+		SKIP_BUILD_RPATH FALSE
+	)
 endif()

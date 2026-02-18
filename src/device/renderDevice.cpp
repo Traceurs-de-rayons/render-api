@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <future>
 #include <stdexcept>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -81,8 +82,7 @@ std::vector<PhysicalDeviceInfo> renderApi::device::enumeratePhysicalDevices(VkIn
 VkPhysicalDevice renderApi::device::selectBestPhysicalDevice(VkInstance instance) {
 	auto devices = enumeratePhysicalDevices(instance);
 
-	if (devices.empty())
-		return VK_NULL_HANDLE;
+	if (devices.empty()) return VK_NULL_HANDLE;
 
 	std::sort(devices.begin(), devices.end(), [](const PhysicalDeviceInfo& a, const PhysicalDeviceInfo& b) {
 		if (a.discreteGPU != b.discreteGPU) return a.discreteGPU > b.discreteGPU;
@@ -101,29 +101,71 @@ InitDeviceResult renderApi::device::finishDeviceInitialization(GPU& gpu) {
 	poolInfo.queueFamilyIndex = gpu.queueFamilies.graphicsFamily >= 0 ? gpu.queueFamilies.graphicsFamily : gpu.queueFamilies.computeFamily;
 	poolInfo.flags			  = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-	if (vkCreateCommandPool(gpu.device, &poolInfo, nullptr, &gpu.commandPool) != VK_SUCCESS)
-		return VK_CREATE_DEVICE_FAILED;
-
-	std::vector<VkDescriptorPoolSize> poolSizes = {
-			{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100}};
-
-	VkDescriptorPoolCreateInfo descriptorPoolInfo{};
-	descriptorPoolInfo.sType		 = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	descriptorPoolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-	descriptorPoolInfo.pPoolSizes	 = poolSizes.data();
-	descriptorPoolInfo.maxSets		 = 100;
-	descriptorPoolInfo.flags		 = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-
-	if (vkCreateDescriptorPool(gpu.device, &descriptorPoolInfo, nullptr, &gpu.descriptorPool) != VK_SUCCESS) {
-		return VK_CREATE_DEVICE_FAILED;
-	}
+	if (vkCreateCommandPool(gpu.device, &poolInfo, nullptr, &gpu.commandPool) != VK_SUCCESS) return VK_CREATE_DEVICE_FAILED;
 
 	return INIT_DEVICE_SUCCESS;
 }
 
 GPU::~GPU() {
+	running = false;
+	if (finishCode.valid()) {
+		finishCode.wait();
+	}
 	cleanup();
 }
 
 void GPU::cleanup() {
+	if (device) {
+		vkDeviceWaitIdle(device);
+
+		if (commandPool) {
+			vkDestroyCommandPool(device, commandPool, nullptr);
+			commandPool = VK_NULL_HANDLE;
+		}
+
+		vkDestroyDevice(device, nullptr);
+		device = VK_NULL_HANDLE;
+	}
+
+	graphicsQueues.clear();
+	computeQueues.clear();
+	transferQueues.clear();
+	physicalDevice = VK_NULL_HANDLE;
+	instance	   = VK_NULL_HANDLE;
+}
+
+VkCommandBuffer GPU::beginOneTimeCommands() {
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType				 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level				 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool		 = commandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+	return commandBuffer;
+}
+
+void GPU::endOneTimeCommands(VkCommandBuffer commandBuffer) {
+	vkEndCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType			  = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers	  = &commandBuffer;
+
+	VkQueue queue = !graphicsQueues.empty() ? graphicsQueues[0] : !computeQueues.empty() ? computeQueues[0] : !transferQueues.empty() ? transferQueues[0] : nullptr;
+	if (queue) {
+		vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+		vkQueueWaitIdle(queue);
+	}
+
+	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }

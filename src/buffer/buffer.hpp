@@ -1,6 +1,7 @@
 #ifndef BUFFER_HPP
 #define BUFFER_HPP
 
+#include "renderDevice.hpp"
 #include <cstring>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -23,8 +24,6 @@ namespace renderApi {
 		STREAM
 	};
 
-	class GPUContext;
-
 	class Buffer {
 	  public:
 		Buffer();
@@ -34,7 +33,7 @@ namespace renderApi {
 		Buffer& operator=(const Buffer&) = delete;
 		Buffer(Buffer&& other) noexcept;
 		Buffer& operator=(Buffer&& other) noexcept;
-		bool create(GPUContext& context, size_t size, BufferType type, BufferUsage usage = BufferUsage::STATIC);
+		bool create(device::GPU* context, size_t size, BufferType type, BufferUsage usage = BufferUsage::STATIC);
 		void destroy();
 		bool resize(size_t newSize);
 		bool upload(const void* data, size_t size, size_t offset = 0);
@@ -53,7 +52,7 @@ namespace renderApi {
 		bool			isMapped() const { return mappedPtr_ != nullptr; }
 
 	  private:
-		GPUContext*		context_;
+		device::GPU*	gpu_;
 		VkBuffer		buffer_;
 		VkDeviceMemory	memory_;
 		VkDeviceAddress deviceAddress_;
@@ -67,39 +66,39 @@ namespace renderApi {
 		VkMemoryPropertyFlags getMemoryFlags() const;
 	};
 
-	template <typename VertexType> Buffer createVertexBuffer(GPUContext& context, const std::vector<VertexType>& vertices) {
+	template <typename VertexType> Buffer createVertexBuffer(device::GPU* gpu, const std::vector<VertexType>& vertices) {
 		Buffer buffer;
-		if (!buffer.create(context, vertices.size() * sizeof(VertexType), BufferType::VERTEX, BufferUsage::STATIC)) {
+		if (!buffer.create(gpu, vertices.size() * sizeof(VertexType), BufferType::VERTEX, BufferUsage::STATIC)) {
 			return Buffer();
 		}
 		buffer.upload(vertices.data(), vertices.size() * sizeof(VertexType));
 		return buffer;
 	}
 
-	template <typename IndexType> Buffer createIndexBuffer(GPUContext& context, const std::vector<IndexType>& indices) {
+	template <typename IndexType> Buffer createIndexBuffer(device::GPU* gpu, const std::vector<IndexType>& indices) {
 		Buffer buffer;
-		if (!buffer.create(context, indices.size() * sizeof(IndexType), BufferType::INDEX, BufferUsage::STATIC)) {
+		if (!buffer.create(gpu, indices.size() * sizeof(IndexType), BufferType::INDEX, BufferUsage::STATIC)) {
 			return Buffer();
 		}
 		buffer.upload(indices.data(), indices.size() * sizeof(IndexType));
 		return buffer;
 	}
 
-	inline Buffer createUniformBuffer(GPUContext& context, size_t size) {
+	inline Buffer createUniformBuffer(device::GPU* gpu, size_t size) {
 		Buffer buffer;
-		buffer.create(context, size, BufferType::UNIFORM, BufferUsage::DYNAMIC);
+		buffer.create(gpu, size, BufferType::UNIFORM, BufferUsage::DYNAMIC);
 		return buffer;
 	}
 
-	inline Buffer createStorageBuffer(GPUContext& context, size_t size, BufferUsage usage = BufferUsage::STATIC) {
+	inline Buffer createStorageBuffer(device::GPU* gpu, size_t size, BufferUsage usage = BufferUsage::STATIC) {
 		Buffer buffer;
-		buffer.create(context, size, BufferType::STORAGE, usage);
+		buffer.create(gpu, size, BufferType::STORAGE, usage);
 		return buffer;
 	}
 
-	inline Buffer createStagingBuffer(GPUContext& context, size_t size) {
+	inline Buffer createStagingBuffer(device::GPU* gpu, size_t size) {
 		Buffer buffer;
-		buffer.create(context, size, BufferType::STAGING, BufferUsage::STREAM);
+		buffer.create(gpu, size, BufferType::STAGING, BufferUsage::STREAM);
 		return buffer;
 	}
 
