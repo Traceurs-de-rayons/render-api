@@ -51,6 +51,9 @@ namespace renderApi::gpuTask {
 		VkPipeline		   getPipeline() const { return pipeline_; }
 		VkPipelineLayout   getLayout() const { return pipelineLayout_; }
 
+		void setEnabled(bool enabled) { enabled_ = enabled; }
+		bool isEnabled() const { return enabled_; }
+
 		void destroy();
 
 		bool build(VkDescriptorSetLayout descriptorSetLayout);

@@ -1,10 +1,12 @@
 #include "pipeline/graphicsPipeline.hpp"
 
+#include "buffer/buffer.hpp"
 #include "device/renderDevice.hpp"
 #include "graphicsPipeline.hpp"
 
 #include <SDL2/SDL_vulkan.h>
 #include <iostream>
+#include <optional>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
@@ -504,12 +506,27 @@ namespace renderApi::gpuTask {
 			return false;
 		}
 
+		// Create fence for synchronization
+		VkFenceCreateInfo fenceInfo{};
+		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+		if (vkCreateFence(gpu_->device, &fenceInfo, nullptr, &renderFence_) != VK_SUCCESS) {
+			std::cerr << "GraphicsPipeline: Failed to create render fence" << std::endl;
+			return false;
+		}
+
 		return true;
 	}
 
 	void GraphicsPipeline::destroy() {
 		if (!gpu_ || !gpu_->device) {
 			return;
+		}
+
+		if (renderFence_ != VK_NULL_HANDLE) {
+			vkDestroyFence(gpu_->device, renderFence_, nullptr);
+			renderFence_ = VK_NULL_HANDLE;
 		}
 
 		if (framebuffer_ != VK_NULL_HANDLE) {
@@ -571,6 +588,84 @@ namespace renderApi::gpuTask {
 			vkDestroyShaderModule(gpu_->device, fragmentShader_, nullptr);
 			fragmentShader_ = VK_NULL_HANDLE;
 		}
+	}
+
+	std::optional<Buffer> GraphicsPipeline::getOutputImageToBuffer() {
+		if (!gpu_ || !gpu_->device || colorImage_ == VK_NULL_HANDLE) {
+			std::cerr << "Cannot get output image: pipeline not initialized" << std::endl;
+			return std::nullopt;
+		}
+
+		std::lock_guard<std::mutex> lock(imageMutex_);
+
+		VkDeviceSize imageSize = width_ * height_ * 4;
+		Buffer outputBuffer;
+		if (!outputBuffer.create(gpu_, imageSize, BufferType::STAGING, BufferUsage::STREAM, BufferMemory::HOST_VISIBLE)) {
+			std::cerr << "Failed to create output buffer" << std::endl;
+			return std::nullopt;
+		}
+
+		VkCommandBuffer cmdBuffer = gpu_->beginOneTimeCommands();
+
+		VkImageMemoryBarrier barrier{};
+		barrier.sType							= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout						= VK_IMAGE_LAYOUT_GENERAL;
+		barrier.newLayout						= VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.srcQueueFamilyIndex				= VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex				= VK_QUEUE_FAMILY_IGNORED;
+		barrier.image							= colorImage_;
+		barrier.subresourceRange.aspectMask		= VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel	= 0;
+		barrier.subresourceRange.levelCount		= 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount		= 1;
+		barrier.srcAccessMask					= VK_ACCESS_SHADER_READ_BIT;
+		barrier.dstAccessMask					= VK_ACCESS_TRANSFER_READ_BIT;
+
+		vkCmdPipelineBarrier(cmdBuffer,
+							 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+							 VK_PIPELINE_STAGE_TRANSFER_BIT,
+							 0,
+							 0,
+							 nullptr,
+							 0,
+							 nullptr,
+							 1,
+							 &barrier);
+
+		// Copy image to buffer
+		VkBufferImageCopy region{};
+		region.bufferOffset						= 0;
+		region.bufferRowLength					= 0;
+		region.bufferImageHeight				= 0;
+		region.imageSubresource.aspectMask		= VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.mipLevel		= 0;
+		region.imageSubresource.baseArrayLayer	= 0;
+		region.imageSubresource.layerCount		= 1;
+		region.imageOffset						= {0, 0, 0};
+		region.imageExtent						= {width_, height_, 1};
+
+		vkCmdCopyImageToBuffer(cmdBuffer, colorImage_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, outputBuffer.getHandle(), 1, &region);
+
+		barrier.oldLayout	  = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.newLayout	  = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+		vkCmdPipelineBarrier(cmdBuffer,
+							 VK_PIPELINE_STAGE_TRANSFER_BIT,
+							 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+							 0,
+							 0,
+							 nullptr,
+							 0,
+							 nullptr,
+							 1,
+							 &barrier);
+
+		gpu_->endOneTimeCommands(cmdBuffer);
+
+		return std::move(outputBuffer);
 	}
 
 } // namespace renderApi::gpuTask

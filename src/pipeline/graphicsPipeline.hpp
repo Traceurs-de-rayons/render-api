@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -38,6 +40,8 @@ namespace renderApi::gpuTask {
 		VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 		VkRenderPass	 renderPass_	 = VK_NULL_HANDLE;
 		VkFramebuffer	 framebuffer_	 = VK_NULL_HANDLE;
+		VkFence			 renderFence_	 = VK_NULL_HANDLE;
+		std::mutex		 imageMutex_;
 
 		VkPipelineVertexInputStateCreateInfo   vertexInputInfo_{};
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo_{};
@@ -66,6 +70,8 @@ namespace renderApi::gpuTask {
 		VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
 		uint32_t	   width_			 = 0;
 		uint32_t	   height_			 = 0;
+
+		bool enabled_ = true;
 
 		OutputTarget			 outputTarget_ = OutputTarget::BUFFER;
 		SDL_Window*				 window_	   = nullptr;
@@ -117,6 +123,13 @@ namespace renderApi::gpuTask {
 		uint32_t		   getWidth() const { return width_; }
 		uint32_t		   getHeight() const { return height_; }
 		device::GPU*	   getGPU() const { return gpu_; }
+
+		void setEnabled(bool enabled) { enabled_ = enabled; }
+		bool isEnabled() const { return enabled_; }
+
+		VkFence getRenderFence() const { return renderFence_; }
+
+		std::optional<Buffer> getOutputImageToBuffer();
 
 		void destroy();
 

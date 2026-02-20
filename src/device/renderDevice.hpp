@@ -1,12 +1,13 @@
 #ifndef RENDER_DEVICE_HPP
 #define RENDER_DEVICE_HPP
 
-#include "gpuTask.hpp"
-#include "utils.hpp"
+#include "../gpuTask/gpuTask.hpp"
+#include "../utils/utils.hpp"
 
 #include <atomic>
 #include <cstdint>
 #include <future>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -66,6 +67,8 @@ namespace renderApi::device {
 		std::atomic<bool>						  running	  = false;
 		std::future<gpuLoopThreadResult>		  finishCode;
 		std::vector<renderApi::gpuTask::GpuTask*> GpuTasks;
+		std::mutex								  GpuTasksMutex;
+		std::mutex								  queueMutex;
 		std::string								  name;
 
 		~GPU();

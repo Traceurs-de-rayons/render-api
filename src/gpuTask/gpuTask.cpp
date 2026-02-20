@@ -6,6 +6,7 @@
 #include "pipeline/graphicsPipeline.hpp"
 #include "renderDevice.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -320,8 +321,10 @@ namespace renderApi::gpuTask {
 			}
 
 			for (auto& pipeline : graphicsPipelines_) {
-				vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getPipeline());
-				vkCmdDraw(commandBuffer_, 3, 1, 0, 0);
+				if (pipeline->isEnabled()) {
+					vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getPipeline());
+					vkCmdDraw(commandBuffer_, 3, 1, 0, 0);
+				}
 			}
 
 			vkCmdEndRenderPass(commandBuffer_);
@@ -338,8 +341,10 @@ namespace renderApi::gpuTask {
 			}
 
 			for (auto& pipeline : pipelines_) {
-				vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getPipeline());
-				vkCmdDispatch(commandBuffer_, 1, 1, 1);
+				if (pipeline->isEnabled()) {
+					vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getPipeline());
+					vkCmdDispatch(commandBuffer_, 1, 1, 1);
+				}
 			}
 		}
 
@@ -360,9 +365,23 @@ namespace renderApi::gpuTask {
 			queue = gpu_->computeQueues[0];
 		}
 
-		if (vkQueueSubmit(queue, 1, &submitInfo, fence_) != VK_SUCCESS) {
-			std::cerr << "Failed to submit queue" << std::endl;
-			return;
+		{
+			std::lock_guard<std::mutex> lock(gpu_->queueMutex);
+
+			VkFence submitFence = fence_;
+			if (!graphicsPipelines_.empty()) {
+				VkFence pipelineFence = graphicsPipelines_[0]->getRenderFence();
+				if (pipelineFence != VK_NULL_HANDLE) {
+					vkWaitForFences(gpu_->device, 1, &pipelineFence, VK_TRUE, UINT64_MAX);
+					vkResetFences(gpu_->device, 1, &pipelineFence);
+					submitFence = pipelineFence;
+				}
+			}
+
+			if (vkQueueSubmit(queue, 1, &submitInfo, submitFence) != VK_SUCCESS) {
+				std::cerr << "Failed to submit queue" << std::endl;
+				return;
+			}
 		}
 	}
 
@@ -372,4 +391,34 @@ namespace renderApi::gpuTask {
 		}
 	}
 
-} // namespace renderApi::gpuTask
+	void GpuTask::registerWithGPU() {
+		if (!gpu_) {
+			std::cerr << "Cannot register GpuTask: GPU is null" << std::endl;
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(gpu_->GpuTasksMutex);
+
+		for (auto* task : gpu_->GpuTasks) {
+			if (task == this) {
+				return;
+			}
+		}
+
+		gpu_->GpuTasks.push_back(this);
+	}
+
+	void GpuTask::unregisterFromGPU() {
+		if (!gpu_) {
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(gpu_->GpuTasksMutex);
+
+		auto it = std::find(gpu_->GpuTasks.begin(), gpu_->GpuTasks.end(), this);
+		if (it != gpu_->GpuTasks.end()) {
+			gpu_->GpuTasks.erase(it);
+		}
+	}
+
+	} // namespace renderApi::gpuTask

@@ -10,17 +10,18 @@ using namespace renderApi;
 
 Buffer::Buffer()
 	: gpu_(nullptr), buffer_(VK_NULL_HANDLE), memory_(VK_NULL_HANDLE), deviceAddress_(0), size_(0), type_(BufferType::VERTEX),
-	  usage_(BufferUsage::STATIC), memoryType_(BufferMemory::DEVICE_LOCAL), mappedPtr_(nullptr), persistentlyMapped_(false) {}
+	  usage_(BufferUsage::STATIC), memoryType_(BufferMemory::DEVICE_LOCAL), mappedPtr_(nullptr), persistentlyMapped_(false), transferFence_(VK_NULL_HANDLE) {}
 
 Buffer::~Buffer() { destroy(); }
 
 Buffer::Buffer(Buffer&& other) noexcept
 	: gpu_(other.gpu_), buffer_(other.buffer_), memory_(other.memory_), deviceAddress_(other.deviceAddress_), size_(other.size_), type_(other.type_),
-	  usage_(other.usage_), memoryType_(other.memoryType_), mappedPtr_(other.mappedPtr_), persistentlyMapped_(other.persistentlyMapped_) {
+	  usage_(other.usage_), memoryType_(other.memoryType_), mappedPtr_(other.mappedPtr_), persistentlyMapped_(other.persistentlyMapped_), transferFence_(other.transferFence_) {
 	other.buffer_	 = VK_NULL_HANDLE;
 	other.memory_	 = VK_NULL_HANDLE;
 	other.mappedPtr_ = nullptr;
 	other.size_		 = 0;
+	other.transferFence_ = VK_NULL_HANDLE;
 }
 
 Buffer& Buffer::operator=(Buffer&& other) noexcept {
@@ -36,10 +37,12 @@ Buffer& Buffer::operator=(Buffer&& other) noexcept {
 		memoryType_			= other.memoryType_;
 		mappedPtr_			= other.mappedPtr_;
 		persistentlyMapped_ = other.persistentlyMapped_;
+		transferFence_		= other.transferFence_;
 		other.buffer_		= VK_NULL_HANDLE;
 		other.memory_		= VK_NULL_HANDLE;
 		other.mappedPtr_	= nullptr;
 		other.size_			= 0;
+		other.transferFence_ = VK_NULL_HANDLE;
 	}
 	return *this;
 }
@@ -102,12 +105,12 @@ bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage 
 	usage_		= usage;
 	memoryType_ = memory;
 
-	if (size == 0) {
-		std::cerr << "Cannot create buffer with size 0" << std::endl;
+	if (!gpu_ || !gpu_->device) {
+		std::cerr << "GPU not initialized" << std::endl;
 		return false;
 	}
 
-	VkDevice vkDevice = gpu->device;
+	VkDevice vkDevice = gpu_->device;
 
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType	   = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -120,7 +123,6 @@ bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage 
 		return false;
 	}
 
-	// Get memory requirements
 	VkMemoryRequirements memRequirements;
 	vkGetBufferMemoryRequirements(vkDevice, buffer_, &memRequirements);
 
@@ -145,10 +147,8 @@ bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage 
 		return false;
 	}
 
-	// Bind memory
 	vkBindBufferMemory(vkDevice, buffer_, memory_, 0);
 
-	// Get device address if supported
 	if (getVkUsageFlags() & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 		VkBufferDeviceAddressInfo addressInfo{};
 		addressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -156,10 +156,18 @@ bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage 
 		deviceAddress_	   = vkGetBufferDeviceAddress(vkDevice, &addressInfo);
 	}
 
-	// Persistent mapping for dynamic/stream buffers
 	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM) {
 		map();
 		persistentlyMapped_ = true;
+	}
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	if (vkCreateFence(vkDevice, &fenceInfo, nullptr, &transferFence_) != VK_SUCCESS) {
+		std::cerr << "Failed to create buffer fence" << std::endl;
+		transferFence_ = VK_NULL_HANDLE;
 	}
 
 	return true;
@@ -172,6 +180,11 @@ void Buffer::destroy() {
 
 	if (persistentlyMapped_ && mappedPtr_) {
 		unmap();
+	}
+
+	if (transferFence_ != VK_NULL_HANDLE) {
+		vkDestroyFence(vkDevice, transferFence_, nullptr);
+		transferFence_ = VK_NULL_HANDLE;
 	}
 
 	if (memory_ != VK_NULL_HANDLE) {
@@ -207,7 +220,11 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 		return false;
 	}
 
-	// For host-visible buffers, just memcpy
+	if (transferFence_ != VK_NULL_HANDLE) {
+		vkWaitForFences(gpu_->device, 1, &transferFence_, VK_TRUE, UINT64_MAX);
+		vkResetFences(gpu_->device, 1, &transferFence_);
+	}
+
 	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING) {
 		void* dst = map();
 		if (!dst) return false;
@@ -216,7 +233,6 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 		return true;
 	}
 
-	// For device-local buffers, use staging
 	Buffer staging;
 	if (!staging.create(gpu_, size, BufferType::STAGING, BufferUsage::STREAM)) {
 		return false;
@@ -226,7 +242,6 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 	memcpy(dst, data, size);
 	staging.unmap();
 
-	// Copy buffer
 	VkCommandBuffer cmd = gpu_->beginOneTimeCommands();
 
 	VkBufferCopy copyRegion{};
@@ -247,7 +262,11 @@ bool Buffer::download(void* data, size_t size, size_t offset) {
 		return false;
 	}
 
-	// For host-visible buffers, just memcpy
+	if (transferFence_ != VK_NULL_HANDLE) {
+		vkWaitForFences(gpu_->device, 1, &transferFence_, VK_TRUE, UINT64_MAX);
+		vkResetFences(gpu_->device, 1, &transferFence_);
+	}
+
 	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING) {
 		void* src = map();
 		if (!src) return false;
@@ -256,13 +275,11 @@ bool Buffer::download(void* data, size_t size, size_t offset) {
 		return true;
 	}
 
-	// For device-local buffers, use staging
 	Buffer staging;
 	if (!staging.create(gpu_, size, BufferType::STAGING, BufferUsage::STREAM)) {
 		return false;
 	}
 
-	// Copy to staging
 	VkCommandBuffer cmd = gpu_->beginOneTimeCommands();
 
 	VkBufferCopy copyRegion{};

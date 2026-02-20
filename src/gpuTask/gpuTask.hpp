@@ -44,6 +44,8 @@ namespace renderApi::gpuTask {
 		std::vector<std::unique_ptr<GraphicsPipeline>> graphicsPipelines_;
 
 		bool isBuilt_ = false;
+		bool enabled_ = true;
+		bool autoExecute_ = false;
 
 	  public:
 		GpuTask(const std::string& name, device::GPU* gpu);
@@ -72,6 +74,15 @@ namespace renderApi::gpuTask {
 		VkCommandBuffer		  getCommandBuffer() const { return commandBuffer_; }
 		const std::string&	  getName() const { return name_; }
 		device::GPU*		  getGPU() const { return gpu_; }
+
+		void setEnabled(bool enabled) { enabled_ = enabled; }
+		bool isEnabled() const { return enabled_; }
+
+		void setAutoExecute(bool autoExecute) { autoExecute_ = autoExecute; }
+		bool isAutoExecute() const { return autoExecute_; }
+
+		void registerWithGPU();
+		void unregisterFromGPU();
 	};
 
 } // namespace renderApi::gpuTask

@@ -163,6 +163,7 @@ void GPU::endOneTimeCommands(VkCommandBuffer commandBuffer) {
 
 	VkQueue queue = !graphicsQueues.empty() ? graphicsQueues[0] : !computeQueues.empty() ? computeQueues[0] : !transferQueues.empty() ? transferQueues[0] : nullptr;
 	if (queue) {
+		std::lock_guard<std::mutex> lock(queueMutex);
 		vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
 		vkQueueWaitIdle(queue);
 	}

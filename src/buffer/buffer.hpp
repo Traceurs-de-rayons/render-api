@@ -57,6 +57,7 @@ namespace renderApi {
 		BufferMemory	memoryType_;
 		void*			mappedPtr_;
 		bool			persistentlyMapped_;
+		VkFence			transferFence_;
 
 		VkBufferUsageFlags	  getVkUsageFlags() const;
 		VkMemoryPropertyFlags getMemoryFlags() const;
