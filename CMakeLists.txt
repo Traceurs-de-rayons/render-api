@@ -67,6 +67,23 @@ install(TARGETS render-api
 )
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
+# Shader build and installation - copy precompiled .spv shaders
+add_custom_target(shaders ALL
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+	${CMAKE_SOURCE_DIR}/shaders
+	${CMAKE_BINARY_DIR}/shaders
+	COMMENT "Copying shaders to build directory"
+)
+
+add_custom_target(shaders_update
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+	${CMAKE_SOURCE_DIR}/shaders
+	${CMAKE_BINARY_DIR}/shaders
+	COMMENT "Updating shaders in build directory"
+)
+
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders/ DESTINATION shaders FILES_MATCHING PATTERN "*.spv")
+
 option(BUILD_RENDER_API_EXAMPLES "Build examples for render-api" ON)
 
 if(BUILD_RENDER_API_EXAMPLES)

@@ -2,27 +2,18 @@
 #define BUFFER_HPP
 
 #include "renderDevice.hpp"
+
 #include <cstring>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
 namespace renderApi {
 
-	enum class BufferType {
-		VERTEX,
-		INDEX,
-		UNIFORM,
-		STORAGE,
-		STAGING,
-		TRANSFER_SRC,
-		TRANSFER_DST
-	};
+	enum class BufferType { VERTEX, INDEX, UNIFORM, STORAGE, STAGING, TRANSFER_SRC, TRANSFER_DST };
 
-	enum class BufferUsage {
-		STATIC,
-		DYNAMIC,
-		STREAM
-	};
+	enum class BufferUsage { STATIC, DYNAMIC, STREAM };
+
+	enum class BufferMemory { DEVICE_LOCAL, HOST_VISIBLE };
 
 	class Buffer {
 	  public:
@@ -33,13 +24,17 @@ namespace renderApi {
 		Buffer& operator=(const Buffer&) = delete;
 		Buffer(Buffer&& other) noexcept;
 		Buffer& operator=(Buffer&& other) noexcept;
-		bool create(device::GPU* context, size_t size, BufferType type, BufferUsage usage = BufferUsage::STATIC);
-		void destroy();
-		bool resize(size_t newSize);
-		bool upload(const void* data, size_t size, size_t offset = 0);
-		bool download(void* data, size_t size, size_t offset = 0);
-		void* map();
-		void unmap();
+		bool	create(device::GPU* context,
+					   size_t		size,
+					   BufferType	type,
+					   BufferUsage	usage  = BufferUsage::STATIC,
+					   BufferMemory memory = BufferMemory::DEVICE_LOCAL);
+		void	destroy();
+		bool	resize(size_t newSize);
+		bool	upload(const void* data, size_t size, size_t offset = 0);
+		bool	download(void* data, size_t size, size_t offset = 0);
+		void*	map();
+		void	unmap();
 
 		template <typename T> bool update(const std::vector<T>& data) { return upload(data.data(), data.size() * sizeof(T)); }
 
@@ -59,6 +54,7 @@ namespace renderApi {
 		size_t			size_;
 		BufferType		type_;
 		BufferUsage		usage_;
+		BufferMemory	memoryType_;
 		void*			mappedPtr_;
 		bool			persistentlyMapped_;
 
@@ -102,6 +98,6 @@ namespace renderApi {
 		return buffer;
 	}
 
-}
+} // namespace renderApi
 
 #endif

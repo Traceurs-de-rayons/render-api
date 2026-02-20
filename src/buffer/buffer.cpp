@@ -1,6 +1,6 @@
 #include "buffer.hpp"
 
-#include "../device/renderDevice.hpp"
+#include "renderDevice.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -10,13 +10,13 @@ using namespace renderApi;
 
 Buffer::Buffer()
 	: gpu_(nullptr), buffer_(VK_NULL_HANDLE), memory_(VK_NULL_HANDLE), deviceAddress_(0), size_(0), type_(BufferType::VERTEX),
-	  usage_(BufferUsage::STATIC), mappedPtr_(nullptr), persistentlyMapped_(false) {}
+	  usage_(BufferUsage::STATIC), memoryType_(BufferMemory::DEVICE_LOCAL), mappedPtr_(nullptr), persistentlyMapped_(false) {}
 
 Buffer::~Buffer() { destroy(); }
 
 Buffer::Buffer(Buffer&& other) noexcept
-	: gpu_(other.gpu_), buffer_(other.buffer_), memory_(other.memory_), deviceAddress_(other.deviceAddress_), size_(other.size_),
-	  type_(other.type_), usage_(other.usage_), mappedPtr_(other.mappedPtr_), persistentlyMapped_(other.persistentlyMapped_) {
+	: gpu_(other.gpu_), buffer_(other.buffer_), memory_(other.memory_), deviceAddress_(other.deviceAddress_), size_(other.size_), type_(other.type_),
+	  usage_(other.usage_), memoryType_(other.memoryType_), mappedPtr_(other.mappedPtr_), persistentlyMapped_(other.persistentlyMapped_) {
 	other.buffer_	 = VK_NULL_HANDLE;
 	other.memory_	 = VK_NULL_HANDLE;
 	other.mappedPtr_ = nullptr;
@@ -33,6 +33,7 @@ Buffer& Buffer::operator=(Buffer&& other) noexcept {
 		size_				= other.size_;
 		type_				= other.type_;
 		usage_				= other.usage_;
+		memoryType_			= other.memoryType_;
 		mappedPtr_			= other.mappedPtr_;
 		persistentlyMapped_ = other.persistentlyMapped_;
 		other.buffer_		= VK_NULL_HANDLE;
@@ -70,7 +71,7 @@ VkBufferUsageFlags Buffer::getVkUsageFlags() const {
 		break;
 	}
 
-	if (type_ == BufferType::STORAGE || type_ == BufferType::VERTEX || type_ == BufferType::INDEX) {
+	if ((type_ == BufferType::STORAGE || type_ == BufferType::VERTEX || type_ == BufferType::INDEX) && memoryType_ == BufferMemory::DEVICE_LOCAL) {
 		flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	}
 
@@ -78,6 +79,10 @@ VkBufferUsageFlags Buffer::getVkUsageFlags() const {
 }
 
 VkMemoryPropertyFlags Buffer::getMemoryFlags() const {
+	if (memoryType_ == BufferMemory::HOST_VISIBLE) {
+		return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	}
+
 	switch (usage_) {
 	case BufferUsage::STATIC:
 		return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -88,20 +93,21 @@ VkMemoryPropertyFlags Buffer::getMemoryFlags() const {
 	return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 }
 
-bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage usage) {
+bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage usage, BufferMemory memory) {
 	destroy();
 
-	gpu_	 = gpu;
-	size_	 = size;
-	type_	 = type;
-	usage_	 = usage;
+	gpu_		= gpu;
+	size_		= size;
+	type_		= type;
+	usage_		= usage;
+	memoryType_ = memory;
 
 	if (size == 0) {
 		std::cerr << "Cannot create buffer with size 0" << std::endl;
 		return false;
 	}
 
-	VkDevice	 vkDevice = gpu->device;
+	VkDevice vkDevice = gpu->device;
 
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType	   = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -186,9 +192,9 @@ void Buffer::destroy() {
 bool Buffer::resize(size_t newSize) {
 	if (!isValid()) return false;
 
-	BufferType	oldType	   = type_;
-	BufferUsage oldUsage   = usage_;
-	device::GPU* oldGpu = gpu_;
+	BufferType	 oldType  = type_;
+	BufferUsage	 oldUsage = usage_;
+	device::GPU* oldGpu	  = gpu_;
 
 	destroy();
 	return create(oldGpu, newSize, oldType, oldUsage);

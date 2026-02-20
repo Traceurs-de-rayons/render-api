@@ -5,7 +5,6 @@
 #include "utils.hpp"
 
 #include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <future>
 #include <string>
