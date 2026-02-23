@@ -2,7 +2,10 @@
 
 #include "device/renderDevice.hpp"
 
+#include <cstdint>
 #include <iostream>
+#include <utility>
+#include <vector>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
@@ -68,6 +71,14 @@ namespace renderApi::gpuTask {
 		workgroupSizeZ_ = z;
 	}
 
+	void ComputePipeline::addPushConstantRange(VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size) {
+		VkPushConstantRange range{};
+		range.stageFlags = stageFlags;
+		range.offset = offset;
+		range.size = size;
+		pushConstantRanges_.push_back(range);
+	}
+
 	bool ComputePipeline::build(VkDescriptorSetLayout descriptorSetLayout) {
 		if (!gpu_ || !gpu_->device) {
 			std::cerr << "ComputePipeline: GPU not initialized" << std::endl;
@@ -83,6 +94,8 @@ namespace renderApi::gpuTask {
 		pipelineLayoutInfo.sType		  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInfo.setLayoutCount = 1;
 		pipelineLayoutInfo.pSetLayouts	  = &descriptorSetLayout;
+		pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges_.size());
+		pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges_.empty() ? nullptr : pushConstantRanges_.data();
 
 		if (vkCreatePipelineLayout(gpu_->device, &pipelineLayoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
 			std::cerr << "ComputePipeline: Failed to create pipeline layout" << std::endl;

@@ -2,16 +2,22 @@
 
 #include "buffer/buffer.hpp"
 #include "createDescriptorSetLayout.hpp"
+#include "descriptor/descriptorSetManager.hpp"
 #include "pipeline/computePipeline.hpp"
 #include "pipeline/graphicsPipeline.hpp"
+#include "query/queryPool.hpp"
 #include "renderDevice.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
@@ -41,6 +47,31 @@ namespace renderApi::gpuTask {
 		vertexBuffers_.push_back(buffer);
 	}
 
+	void GpuTask::setIndexBuffer(Buffer* buffer, VkIndexType indexType) {
+		if (isBuilt_) {
+			std::cerr << "Cannot set index buffer to built GPU task. Call destroy() first." << std::endl;
+			return;
+		}
+		indexBuffer_ = buffer;
+		indexType_	 = indexType;
+	}
+
+	void GpuTask::setDrawParams(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
+		vertexCount_   = vertexCount;
+		instanceCount_ = instanceCount;
+		firstVertex_   = firstVertex;
+		firstInstance_ = firstInstance;
+	}
+
+	void
+	GpuTask::setIndexedDrawParams(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+		indexCount_	   = indexCount;
+		instanceCount_ = instanceCount;
+		firstIndex_	   = firstIndex;
+		vertexOffset_  = vertexOffset;
+		firstInstance_ = firstInstance;
+	}
+
 	void GpuTask::removeBuffer(Buffer* buffer) {
 		if (isBuilt_) {
 			std::cerr << "Cannot remove buffer from built GPU task. Call destroy() first." << std::endl;
@@ -62,6 +93,47 @@ namespace renderApi::gpuTask {
 		}
 		buffers_.clear();
 		bufferStages_.clear();
+	}
+
+	void GpuTask::pushConstants(VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* data) {
+		// Store push constants to be applied during command buffer recording in execute()
+		PushConstantData pcData;
+		pcData.stageFlags = stageFlags;
+		pcData.offset = offset;
+		pcData.size = size;
+		pcData.data.resize(size);
+		memcpy(pcData.data.data(), data, size);
+
+		// Clear previous push constants and store the new one
+		// (In a more advanced implementation, you could merge multiple ranges)
+		pushConstants_.clear();
+		pushConstants_.push_back(pcData);
+	}
+
+	descriptor::DescriptorSetManager* GpuTask::getDescriptorManager() {
+		if (!descriptorManager_) {
+			descriptorManager_ = std::make_unique<descriptor::DescriptorSetManager>();
+		}
+		return descriptorManager_.get();
+	}
+
+	void GpuTask::enableDescriptorManager(bool enable) {
+		useDescriptorManager_ = enable;
+		if (enable && !descriptorManager_) {
+			descriptorManager_ = std::make_unique<descriptor::DescriptorSetManager>();
+		}
+	}
+
+	query::QueryPool* GpuTask::createQueryPool(uint32_t queryCount) {
+		if (!queryPool_) {
+			queryPool_ = std::make_unique<query::QueryPool>();
+			if (!queryPool_->create(gpu_, query::QueryType::TIMESTAMP, queryCount)) {
+				std::cerr << "Failed to create query pool" << std::endl;
+				queryPool_.reset();
+				return nullptr;
+			}
+		}
+		return queryPool_.get();
 	}
 
 	ComputePipeline* GpuTask::createComputePipeline(const std::string& name) {
@@ -88,7 +160,13 @@ namespace renderApi::gpuTask {
 			return false;
 		}
 
-		if (!buffers_.empty()) {
+		// Use new descriptor manager if enabled
+		if (useDescriptorManager_ && descriptorManager_) {
+			if (!descriptorManager_->build(gpu_)) {
+				std::cerr << "Failed to build descriptor manager" << std::endl;
+				return false;
+			}
+		} else if (!buffers_.empty()) {
 			try {
 				descriptorSetLayout_ = createDescriptorSetLayoutFromBuffers(gpu_->device, buffers_, bufferStages_);
 			} catch (const std::exception& e) {
@@ -202,8 +280,19 @@ namespace renderApi::gpuTask {
 			return false;
 		}
 
+		// Get descriptor set layout
+		VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+		if (useDescriptorManager_ && descriptorManager_) {
+			auto layouts = descriptorManager_->getLayouts();
+			if (!layouts.empty()) {
+				layout = layouts[0]; // Use first set for now
+			}
+		} else {
+			layout = descriptorSetLayout_;
+		}
+
 		for (auto& pipeline : pipelines_) {
-			if (!pipeline->build(descriptorSetLayout_)) {
+			if (!pipeline->build(layout)) {
 				std::cerr << "Failed to build pipeline: " << pipeline->getName() << std::endl;
 				destroy();
 				return false;
@@ -217,7 +306,7 @@ namespace renderApi::gpuTask {
 				return false;
 			}
 			for (auto& pipeline : graphicsPipelines_) {
-				if (!pipeline->build(descriptorSetLayout_, renderWidth, renderHeight)) {
+				if (!pipeline->build(layout, renderWidth, renderHeight)) {
 					std::cerr << "Failed to build graphics pipeline: " << pipeline->getName() << std::endl;
 					destroy();
 					return false;
@@ -236,6 +325,14 @@ namespace renderApi::gpuTask {
 
 		pipelines_.clear();
 		graphicsPipelines_.clear();
+
+		if (descriptorManager_) {
+			descriptorManager_->destroy();
+		}
+
+		if (queryPool_) {
+			queryPool_->destroy();
+		}
 
 		if (fence_ != VK_NULL_HANDLE) {
 			vkDestroyFence(gpu_->device, fence_, nullptr);
@@ -279,6 +376,29 @@ namespace renderApi::gpuTask {
 		vkWaitForFences(gpu_->device, 1, &fence_, VK_TRUE, UINT64_MAX);
 		vkResetFences(gpu_->device, 1, &fence_);
 
+		// Reset query pool if present
+		if (queryPool_ && queryPool_->isValid()) {
+			// Will be reset in command buffer
+		}
+
+		uint32_t imageIndex	   = 0;
+		bool	 usesSwapchain = false;
+
+		if (!graphicsPipelines_.empty() && graphicsPipelines_[0]->getSwapchain() != VK_NULL_HANDLE) {
+			usesSwapchain		  = true;
+			VkSemaphore semaphore = graphicsPipelines_[0]->getImageAvailableSemaphore();
+			VkResult	result =
+					vkAcquireNextImageKHR(gpu_->device, graphicsPipelines_[0]->getSwapchain(), UINT64_MAX, semaphore, VK_NULL_HANDLE, &imageIndex);
+
+			if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+				graphicsPipelines_[0]->recreateSwapchain();
+				return;
+			} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+				std::cerr << "Failed to acquire swapchain image" << std::endl;
+				return;
+			}
+		}
+
 		vkResetCommandBuffer(commandBuffer_, 0);
 
 		VkCommandBufferBeginInfo beginInfo{};
@@ -290,21 +410,46 @@ namespace renderApi::gpuTask {
 			return;
 		}
 
+		// Reset query pool at the start of command buffer
+		if (queryPool_ && queryPool_->isValid()) {
+			queryPool_->reset(commandBuffer_);
+		}
+
 		if (!graphicsPipelines_.empty()) {
 			std::vector<VkClearValue> clearValues(2);
-			clearValues[0].color		= {{0.0f, 0.0f, 0.0f, 1.0f}};
+			clearValues[0].color		= {{0.2f, 0.2f, 0.2f, 1.0f}};  // Gray background for better visibility
 			clearValues[1].depthStencil = {1.0f, 0};
 
 			VkRenderPassBeginInfo renderPassInfo{};
-			renderPassInfo.sType			 = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass		 = graphicsPipelines_[0]->getRenderPass();
-			renderPassInfo.framebuffer		 = graphicsPipelines_[0]->getFramebuffer();
+			renderPassInfo.sType	  = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			renderPassInfo.renderPass = graphicsPipelines_[0]->getRenderPass();
+			if (usesSwapchain) {
+				renderPassInfo.framebuffer = graphicsPipelines_[0]->getSwapchainFramebuffer(imageIndex);
+			} else {
+				renderPassInfo.framebuffer = graphicsPipelines_[0]->getFramebuffer();
+			}
 			renderPassInfo.renderArea.offset = {0, 0};
 			renderPassInfo.renderArea.extent = {graphicsPipelines_[0]->getWidth(), graphicsPipelines_[0]->getHeight()};
 			renderPassInfo.clearValueCount	 = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues		 = clearValues.data();
 
-			if (!buffers_.empty()) {
+
+
+			// Bind descriptor sets
+			if (useDescriptorManager_ && descriptorManager_) {
+				auto descriptorSets = descriptorManager_->getDescriptorSets();
+				auto layouts		= descriptorManager_->getLayouts();
+				if (!descriptorSets.empty() && !graphicsPipelines_.empty()) {
+					vkCmdBindDescriptorSets(commandBuffer_,
+											VK_PIPELINE_BIND_POINT_GRAPHICS,
+											graphicsPipelines_[0]->getLayout(),
+											0,
+											static_cast<uint32_t>(descriptorSets.size()),
+											descriptorSets.data(),
+											0,
+											nullptr);
+				}
+			} else if (!buffers_.empty()) {
 				vkCmdBindDescriptorSets(
 						commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipelines_[0]->getLayout(), 0, 1, &descriptorSet_, 0, nullptr);
 			}
@@ -320,16 +465,43 @@ namespace renderApi::gpuTask {
 				vkCmdBindVertexBuffers(commandBuffer_, 0, static_cast<uint32_t>(vkBuffers.size()), vkBuffers.data(), offsets.data());
 			}
 
+			if (indexBuffer_ != nullptr) {
+				vkCmdBindIndexBuffer(commandBuffer_, indexBuffer_->getHandle(), 0, indexType_);
+			}
+
 			for (auto& pipeline : graphicsPipelines_) {
 				if (pipeline->isEnabled()) {
 					vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getPipeline());
-					vkCmdDraw(commandBuffer_, 3, 1, 0, 0);
+
+					// Apply push constants if any
+					for (const auto& pc : pushConstants_) {
+						vkCmdPushConstants(commandBuffer_, pipeline->getLayout(), pc.stageFlags, pc.offset, pc.size, pc.data.data());
+					}
+
+					if (indexBuffer_ != nullptr) {
+						vkCmdDrawIndexed(commandBuffer_, indexCount_, instanceCount_, firstIndex_, vertexOffset_, firstInstance_);
+					} else {
+						vkCmdDraw(commandBuffer_, vertexCount_, instanceCount_, firstVertex_, firstInstance_);
+					}
 				}
 			}
 
 			vkCmdEndRenderPass(commandBuffer_);
 		} else if (!pipelines_.empty()) {
-			if (!buffers_.empty()) {
+			// Bind descriptor sets for compute
+			if (useDescriptorManager_ && descriptorManager_) {
+				auto descriptorSets = descriptorManager_->getDescriptorSets();
+				if (!descriptorSets.empty() && !pipelines_.empty()) {
+					vkCmdBindDescriptorSets(commandBuffer_,
+											VK_PIPELINE_BIND_POINT_COMPUTE,
+											pipelines_[0]->getLayout(),
+											0,
+											static_cast<uint32_t>(descriptorSets.size()),
+											descriptorSets.data(),
+											0,
+											nullptr);
+				}
+			} else if (!buffers_.empty()) {
 				vkCmdBindDescriptorSets(commandBuffer_,
 										VK_PIPELINE_BIND_POINT_COMPUTE,
 										pipelines_.empty() ? VK_NULL_HANDLE : pipelines_[0]->getLayout(),
@@ -343,10 +515,18 @@ namespace renderApi::gpuTask {
 			for (auto& pipeline : pipelines_) {
 				if (pipeline->isEnabled()) {
 					vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getPipeline());
+
+					// Apply push constants if any
+					for (const auto& pc : pushConstants_) {
+						vkCmdPushConstants(commandBuffer_, pipeline->getLayout(), pc.stageFlags, pc.offset, pc.size, pc.data.data());
+					}
+
 					vkCmdDispatch(commandBuffer_, 1, 1, 1);
 				}
 			}
 		}
+
+		// No need for manual layout transition - renderpass finalLayout already handles it
 
 		if (vkEndCommandBuffer(commandBuffer_) != VK_SUCCESS) {
 			std::cerr << "Failed to end command buffer" << std::endl;
@@ -354,9 +534,14 @@ namespace renderApi::gpuTask {
 		}
 
 		VkSubmitInfo submitInfo{};
-		submitInfo.sType			  = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers	  = &commandBuffer_;
+		submitInfo.sType				= VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.commandBufferCount	= 1;
+		submitInfo.pCommandBuffers		= &commandBuffer_;
+		submitInfo.waitSemaphoreCount	= 0;
+		submitInfo.pWaitSemaphores		= nullptr;
+		submitInfo.pWaitDstStageMask	= nullptr;
+		submitInfo.signalSemaphoreCount = 0;
+		submitInfo.pSignalSemaphores	= nullptr;
 
 		VkQueue queue;
 		if (!graphicsPipelines_.empty() && !gpu_->graphicsQueues.empty()) {
@@ -368,20 +553,58 @@ namespace renderApi::gpuTask {
 		{
 			std::lock_guard<std::mutex> lock(gpu_->queueMutex);
 
-			VkFence submitFence = fence_;
-			if (!graphicsPipelines_.empty()) {
-				VkFence pipelineFence = graphicsPipelines_[0]->getRenderFence();
-				if (pipelineFence != VK_NULL_HANDLE) {
-					vkWaitForFences(gpu_->device, 1, &pipelineFence, VK_TRUE, UINT64_MAX);
-					vkResetFences(gpu_->device, 1, &pipelineFence);
-					submitFence = pipelineFence;
-				}
+			VkSemaphore			 waitSemaphore	 = VK_NULL_HANDLE;
+			VkSemaphore			 signalSemaphore = VK_NULL_HANDLE;
+			VkPipelineStageFlags waitStage		 = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+			if (usesSwapchain) {
+				waitSemaphore	= graphicsPipelines_[0]->getImageAvailableSemaphore();
+				signalSemaphore = graphicsPipelines_[0]->getRenderFinishedSemaphore();
+
+				submitInfo.waitSemaphoreCount = 1;
+				submitInfo.pWaitSemaphores	  = &waitSemaphore;
+				submitInfo.pWaitDstStageMask  = &waitStage;
+
+				submitInfo.signalSemaphoreCount = 1;
+				submitInfo.pSignalSemaphores	= &signalSemaphore;
+			} else {
+				submitInfo.waitSemaphoreCount	= 0;
+				submitInfo.pWaitSemaphores		= nullptr;
+				submitInfo.pWaitDstStageMask	= nullptr;
+				submitInfo.signalSemaphoreCount = 0;
+				submitInfo.pSignalSemaphores	= nullptr;
 			}
 
-			if (vkQueueSubmit(queue, 1, &submitInfo, submitFence) != VK_SUCCESS) {
+			if (vkQueueSubmit(queue, 1, &submitInfo, fence_) != VK_SUCCESS) {
 				std::cerr << "Failed to submit queue" << std::endl;
 				return;
 			}
+
+			if (usesSwapchain) {
+				VkSwapchainKHR swapchain = graphicsPipelines_[0]->getSwapchain();
+
+				VkPresentInfoKHR presentInfo{};
+				presentInfo.sType			   = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+				presentInfo.waitSemaphoreCount = 1;
+				presentInfo.pWaitSemaphores	   = &signalSemaphore;
+				presentInfo.swapchainCount	   = 1;
+				presentInfo.pSwapchains		   = &swapchain;
+				presentInfo.pImageIndices	   = &imageIndex;
+
+				VkQueue presentQueue = gpu_->getPresentQueue();
+				if (presentQueue != VK_NULL_HANDLE) {
+					VkResult presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
+					if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+						graphicsPipelines_[0]->recreateSwapchain();
+					} else if (presentResult != VK_SUCCESS) {
+						std::cerr << "Failed to present swapchain image" << std::endl;
+					}
+				}
+			}
+		}
+
+		if (usesSwapchain) {
+			vkQueueWaitIdle(queue);
 		}
 	}
 
@@ -421,4 +644,4 @@ namespace renderApi::gpuTask {
 		}
 	}
 
-	} // namespace renderApi::gpuTask
+} // namespace renderApi::gpuTask

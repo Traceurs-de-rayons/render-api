@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <future>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -42,6 +43,12 @@ uint32_t renderApi::device::findMemoryType(VkPhysicalDevice physicalDevice, uint
 	}
 
 	throw std::runtime_error("Failed to find suitable memory type!");
+}
+
+bool renderApi::device::queueSupportsPresentation(VkPhysicalDevice physicalDevice, uint32_t familyIndex, VkSurfaceKHR surface) {
+	VkBool32 supported = VK_FALSE;
+	vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, surface, &supported);
+	return supported == VK_TRUE;
 }
 
 std::vector<PhysicalDeviceInfo> renderApi::device::enumeratePhysicalDevices(VkInstance instance) {
@@ -108,8 +115,13 @@ InitDeviceResult renderApi::device::finishDeviceInitialization(GPU& gpu) {
 
 GPU::~GPU() {
 	running = false;
+	
 	if (finishCode.valid()) {
-		finishCode.wait();
+		// Attendre maximum 5 secondes pour que le thread se termine (il vérifie running toutes les 1ms)
+		auto status = finishCode.wait_for(std::chrono::seconds(5));
+		if (status == std::future_status::timeout) {
+			std::cerr << "Warning: GPU thread '" << name << "' did not finish in time, forcing cleanup" << std::endl;
+		}
 	}
 	cleanup();
 }
@@ -130,6 +142,7 @@ void GPU::cleanup() {
 	graphicsQueues.clear();
 	computeQueues.clear();
 	transferQueues.clear();
+	presentQueues.clear();
 	physicalDevice = VK_NULL_HANDLE;
 	instance	   = VK_NULL_HANDLE;
 }
@@ -161,7 +174,10 @@ void GPU::endOneTimeCommands(VkCommandBuffer commandBuffer) {
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers	  = &commandBuffer;
 
-	VkQueue queue = !graphicsQueues.empty() ? graphicsQueues[0] : !computeQueues.empty() ? computeQueues[0] : !transferQueues.empty() ? transferQueues[0] : nullptr;
+	VkQueue queue = !graphicsQueues.empty()	  ? graphicsQueues[0]
+					: !computeQueues.empty()  ? computeQueues[0]
+					: !transferQueues.empty() ? transferQueues[0]
+											  : nullptr;
 	if (queue) {
 		std::lock_guard<std::mutex> lock(queueMutex);
 		vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
@@ -169,4 +185,14 @@ void GPU::endOneTimeCommands(VkCommandBuffer commandBuffer) {
 	}
 
 	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+VkQueue GPU::getPresentQueue() {
+	if (!presentQueues.empty()) {
+		return presentQueues[0];
+	}
+	if (!graphicsQueues.empty()) {
+		return graphicsQueues[0];
+	}
+	return VK_NULL_HANDLE;
 }

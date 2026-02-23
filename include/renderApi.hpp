@@ -3,6 +3,9 @@
 
 #include "renderDevice.hpp"
 #include "renderInstance.hpp"
+#include "image/image.hpp"
+#include "query/queryPool.hpp"
+#include "descriptor/descriptorSetManager.hpp"
 
 #include <string>
 #include <vector>

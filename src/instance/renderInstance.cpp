@@ -14,6 +14,11 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(__linux__)
+#include <X11/Xlib.h>
+#include <vulkan/vulkan_xlib.h>
+#endif
 #include <vulkan/vulkan_core.h>
 
 using namespace renderApi::instance;
@@ -30,10 +35,34 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 	appInfo.engineVersion	   = config_.engineVersion;
 	appInfo.apiVersion		   = config_.apiVersion;
 
-	createInfo.sType				   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	createInfo.pApplicationInfo		   = &appInfo;
-	createInfo.enabledExtensionCount   = static_cast<uint32_t>(config_.extensions.size());
-	createInfo.ppEnabledExtensionNames = config_.extensions.data();
+	createInfo.sType			= VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	createInfo.pApplicationInfo = &appInfo;
+
+	std::vector<const char*> instanceExtensions = config_.extensions;
+	bool					 hasSurface			= false;
+	for (const auto& ext : instanceExtensions) {
+		if (std::string(ext) == VK_KHR_SURFACE_EXTENSION_NAME) {
+			hasSurface = true;
+			break;
+		}
+	}
+	if (!hasSurface) {
+		instanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	}
+
+	bool hasXlibSurface = false;
+	for (const auto& ext : instanceExtensions) {
+		if (std::string(ext) == VK_KHR_XLIB_SURFACE_EXTENSION_NAME) {
+			hasXlibSurface = true;
+			break;
+		}
+	}
+	if (!hasXlibSurface) {
+		instanceExtensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+	}
+
+	createInfo.enabledExtensionCount   = static_cast<uint32_t>(instanceExtensions.size());
+	createInfo.ppEnabledExtensionNames = instanceExtensions.data();
 	createInfo.enabledLayerCount	   = static_cast<uint32_t>(config_.layers.size());
 	createInfo.ppEnabledLayerNames	   = config_.layers.data();
 	createInfo.flags				   = config_.flags;
@@ -42,7 +71,9 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 }
 
 RenderInstance::~RenderInstance() {
+	// Les destructeurs des GPUs vont gérer l'arrêt de leurs threads
 	gpus_.clear();
+	
 	if (instance_) {
 		vkDestroyInstance(instance_, nullptr);
 		instance_ = nullptr;
@@ -189,11 +220,26 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 
 	VkPhysicalDeviceFeatures deviceFeatures{};
 
+	uint32_t availableExtCount = 0;
+	vkEnumerateDeviceExtensionProperties(gpu->physicalDevice, nullptr, &availableExtCount, nullptr);
+	std::vector<VkExtensionProperties> availableExts(availableExtCount);
+	vkEnumerateDeviceExtensionProperties(gpu->physicalDevice, nullptr, &availableExtCount, availableExts.data());
+
+	std::vector<const char*> deviceExtensions;
+	for (const auto& ext : availableExts) {
+		if (std::string(ext.extensionName) == VK_KHR_SWAPCHAIN_EXTENSION_NAME) {
+			deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+			break;
+		}
+	}
+
 	VkDeviceCreateInfo deviceCreateInfo{};
-	deviceCreateInfo.sType				  = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	deviceCreateInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-	deviceCreateInfo.pQueueCreateInfos	  = queueCreateInfos.data();
-	deviceCreateInfo.pEnabledFeatures	  = &deviceFeatures;
+	deviceCreateInfo.sType					 = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	deviceCreateInfo.queueCreateInfoCount	 = static_cast<uint32_t>(queueCreateInfos.size());
+	deviceCreateInfo.pQueueCreateInfos		 = queueCreateInfos.data();
+	deviceCreateInfo.pEnabledFeatures		 = &deviceFeatures;
+	deviceCreateInfo.enabledExtensionCount	 = static_cast<uint32_t>(deviceExtensions.size());
+	deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.empty() ? nullptr : deviceExtensions.data();
 
 	VkResult result = vkCreateDevice(gpu->physicalDevice, &deviceCreateInfo, nullptr, &gpu->device);
 	if (result != VK_SUCCESS) {

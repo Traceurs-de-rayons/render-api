@@ -33,6 +33,8 @@ namespace renderApi::gpuTask {
 		uint32_t workgroupSizeZ_ = 1;
 
 		VkPipelineShaderStageCreateInfo shaderStage_{};
+		
+		std::vector<VkPushConstantRange> pushConstantRanges_;
 
 		friend class GpuTask;
 
@@ -46,6 +48,7 @@ namespace renderApi::gpuTask {
 
 		void setShader(const std::vector<uint32_t>& spvCode);
 		void setWorkgroupSize(uint32_t x, uint32_t y = 1, uint32_t z = 1);
+		void addPushConstantRange(VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size);
 
 		const std::string& getName() const { return name_; }
 		VkPipeline		   getPipeline() const { return pipeline_; }

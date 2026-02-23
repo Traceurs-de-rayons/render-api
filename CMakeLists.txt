@@ -91,6 +91,18 @@ if(BUILD_RENDER_API_EXAMPLES)
 	target_link_libraries(render-api-example PRIVATE render-api)
 	target_compile_features(render-api-example PRIVATE cxx_std_17)
 
+	add_executable(cube-demo examples/cube_demo.cpp)
+	target_link_libraries(cube-demo PRIVATE render-api)
+	target_compile_features(cube-demo PRIVATE cxx_std_17)
+
+	# Set RPATH to include Vulkan SDK lib directory
+	set_target_properties(cube-demo PROPERTIES
+		BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+		INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+		BUILD_WITH_INSTALL_RPATH FALSE
+		SKIP_BUILD_RPATH FALSE
+	)
+
 	# Set RPATH to include Vulkan SDK lib directory
 	set_target_properties(render-api-example PROPERTIES
 		BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"

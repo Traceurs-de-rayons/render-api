@@ -2,7 +2,6 @@
 #define GRAPHICS_PIPELINE_HPP
 
 #include <cstdint>
-#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -57,29 +56,38 @@ namespace renderApi::gpuTask {
 		std::vector<VkVertexInputAttributeDescription> vertexAttributes_;
 		std::vector<VkVertexInputBindingDescription>   vertexBindings_;
 
+		std::vector<VkPushConstantRange> pushConstantRanges_;
+
 		VkViewport viewport_{};
 		VkRect2D   scissor_{};
 
-		VkFormat	   colorFormat_		 = VK_FORMAT_R8G8B8A8_UNORM;
 		VkFormat	   depthFormat_		 = VK_FORMAT_D32_SFLOAT;
-		VkImage		   colorImage_		 = VK_NULL_HANDLE;
-		VkImageView	   colorImageView_	 = VK_NULL_HANDLE;
-		VkDeviceMemory colorImageMemory_ = VK_NULL_HANDLE;
 		VkImage		   depthImage_		 = VK_NULL_HANDLE;
 		VkImageView	   depthImageView_	 = VK_NULL_HANDLE;
 		VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
 		uint32_t	   width_			 = 0;
 		uint32_t	   height_			 = 0;
 
+		// Multiple Render Targets support
+		std::vector<VkFormat>		colorFormats_;
+		std::vector<VkImage>		colorImages_;
+		std::vector<VkImageView>	colorImageViews_;
+		std::vector<VkDeviceMemory> colorImageMemories_;
+		uint32_t					colorAttachmentCount_ = 1;
+
 		bool enabled_ = true;
 
-		OutputTarget			 outputTarget_ = OutputTarget::BUFFER;
-		SDL_Window*				 window_	   = nullptr;
-		VkSurfaceKHR			 surface_	   = VK_NULL_HANDLE;
-		VkSwapchainKHR			 swapchain_	   = VK_NULL_HANDLE;
-		std::vector<VkImage>	 swapchainImages_;
-		std::vector<VkImageView> swapchainImageViews_;
-		uint32_t				 currentFrame_ = 0;
+		OutputTarget			   outputTarget_ = OutputTarget::BUFFER;
+		SDL_Window*				   window_		 = nullptr;
+		VkSurfaceKHR			   surface_		 = VK_NULL_HANDLE;
+		VkSwapchainKHR			   swapchain_	 = VK_NULL_HANDLE;
+		std::vector<VkImage>	   swapchainImages_;
+		std::vector<VkImageView>   swapchainImageViews_;
+		std::vector<VkFramebuffer> swapchainFramebuffers_;
+		uint32_t				   currentFrame_ = 0;
+
+		VkSemaphore imageAvailableSemaphore_ = VK_NULL_HANDLE;
+		VkSemaphore renderFinishedSemaphore_ = VK_NULL_HANDLE;
 
 		friend class GpuTask;
 
@@ -109,20 +117,38 @@ namespace renderApi::gpuTask {
 																			VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
 		void setColorFormat(VkFormat format);
 		void setDepthFormat(VkFormat format);
+		void addPushConstantRange(VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size);
+
+		// Multiple Render Targets
+		void setColorAttachmentCount(uint32_t count);
+		void setColorAttachmentFormat(uint32_t index, VkFormat format);
 
 		void setOutputTarget(OutputTarget target);
 		void setSDLWindow(SDL_Window* window);
+
+		bool createSwapchain();
+		bool recreateSwapchain();
+		void destroySwapchain();
+
+		VkFramebuffer  getSwapchainFramebuffer(uint32_t index) const;
+		uint32_t	   getSwapchainImageCount() const;
+		VkImage		   getSwapchainImage(uint32_t index) const;
+		VkSwapchainKHR getSwapchain() const { return swapchain_; }
+		VkSurfaceKHR   getSurface() const { return surface_; }
+		VkSemaphore	   getImageAvailableSemaphore() const { return imageAvailableSemaphore_; }
+		VkSemaphore	   getRenderFinishedSemaphore() const { return renderFinishedSemaphore_; }
 
 		const std::string& getName() const { return name_; }
 		VkPipeline		   getPipeline() const { return pipeline_; }
 		VkPipelineLayout   getLayout() const { return pipelineLayout_; }
 		VkRenderPass	   getRenderPass() const { return renderPass_; }
 		VkFramebuffer	   getFramebuffer() const { return framebuffer_; }
-		VkImage			   getColorImage() const { return colorImage_; }
-		VkFormat		   getColorFormat() const { return colorFormat_; }
-		uint32_t		   getWidth() const { return width_; }
-		uint32_t		   getHeight() const { return height_; }
-		device::GPU*	   getGPU() const { return gpu_; }
+		VkImage			   getColorImage(uint32_t index = 0) const { return index < colorImages_.size() ? colorImages_[index] : VK_NULL_HANDLE; }
+		VkFormat	 getColorFormat(uint32_t index = 0) const { return index < colorFormats_.size() ? colorFormats_[index] : VK_FORMAT_UNDEFINED; }
+		uint32_t	 getColorAttachmentCount() const { return colorAttachmentCount_; }
+		uint32_t	 getWidth() const { return width_; }
+		uint32_t	 getHeight() const { return height_; }
+		device::GPU* getGPU() const { return gpu_; }
 
 		void setEnabled(bool enabled) { enabled_ = enabled; }
 		bool isEnabled() const { return enabled_; }

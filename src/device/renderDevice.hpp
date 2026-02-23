@@ -62,6 +62,7 @@ namespace renderApi::device {
 		std::vector<VkQueue>					  graphicsQueues;
 		std::vector<VkQueue>					  computeQueues;
 		std::vector<VkQueue>					  transferQueues;
+		std::vector<VkQueue>					  presentQueues;
 		QueueFamilies							  queueFamilies;
 		VkCommandPool							  commandPool = VK_NULL_HANDLE;
 		std::atomic<bool>						  running	  = false;
@@ -72,9 +73,10 @@ namespace renderApi::device {
 		std::string								  name;
 
 		~GPU();
-		void cleanup();
+		void			cleanup();
 		VkCommandBuffer beginOneTimeCommands();
-		void endOneTimeCommands(VkCommandBuffer commandBuffer);
+		void			endOneTimeCommands(VkCommandBuffer commandBuffer);
+		VkQueue			getPresentQueue();
 	};
 
 	gpuLoopThreadResult				gpuThreadLoop(renderApi::device::GPU& gpu);
@@ -83,6 +85,7 @@ namespace renderApi::device {
 	InitDeviceResult				finishDeviceInitialization(GPU& gpu);
 	QueueFamilies					findQueueFamilies(VkPhysicalDevice device);
 	uint32_t						findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+	bool							queueSupportsPresentation(VkPhysicalDevice physicalDevice, uint32_t familyIndex, VkSurfaceKHR surface);
 }; // namespace renderApi::device
 
 #endif
