@@ -68,46 +68,58 @@ install(TARGETS render-api
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # Shader build and installation - copy precompiled .spv shaders
-add_custom_target(shaders ALL
-	COMMAND ${CMAKE_COMMAND} -E copy_directory
-	${CMAKE_SOURCE_DIR}/shaders
-	${CMAKE_BINARY_DIR}/shaders
-	COMMENT "Copying shaders to build directory"
-)
+if(EXISTS ${CMAKE_SOURCE_DIR}/shaders)
+	add_custom_target(shaders ALL
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+		${CMAKE_SOURCE_DIR}/shaders
+		${CMAKE_BINARY_DIR}/shaders
+		COMMENT "Copying shaders to build directory"
+	)
 
-add_custom_target(shaders_update
-	COMMAND ${CMAKE_COMMAND} -E copy_directory
-	${CMAKE_SOURCE_DIR}/shaders
-	${CMAKE_BINARY_DIR}/shaders
-	COMMENT "Updating shaders in build directory"
-)
+	add_custom_target(shaders_update
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+		${CMAKE_SOURCE_DIR}/shaders
+		${CMAKE_BINARY_DIR}/shaders
+		COMMENT "Updating shaders in build directory"
+	)
 
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders/ DESTINATION shaders FILES_MATCHING PATTERN "*.spv")
+	install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders/ DESTINATION shaders FILES_MATCHING PATTERN "*.spv")
+else()
+	message(WARNING "shaders directory not found, skipping shader copy")
+endif()
 
-option(BUILD_RENDER_API_EXAMPLES "Build examples for render-api" ON)
+option(BUILD_RENDER_API_EXAMPLES "Build examples for render-api" OFF)
 
 if(BUILD_RENDER_API_EXAMPLES)
-	add_executable(render-api-example examples/main.cpp)
-	target_link_libraries(render-api-example PRIVATE render-api)
-	target_compile_features(render-api-example PRIVATE cxx_std_17)
+	if(EXISTS ${CMAKE_SOURCE_DIR}/examples/main.cpp)
+		add_executable(render-api-example examples/main.cpp)
+		target_link_libraries(render-api-example PRIVATE render-api)
+		target_compile_features(render-api-example PRIVATE cxx_std_17)
 
-	add_executable(cube-demo examples/cube_demo.cpp)
-	target_link_libraries(cube-demo PRIVATE render-api)
-	target_compile_features(cube-demo PRIVATE cxx_std_17)
+		# Set RPATH to include Vulkan SDK lib directory
+		set_target_properties(render-api-example PROPERTIES
+			BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+			INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+			BUILD_WITH_INSTALL_RPATH FALSE
+			SKIP_BUILD_RPATH FALSE
+		)
+	else()
+		message(WARNING "examples/main.cpp not found, skipping render-api-example")
+	endif()
 
-	# Set RPATH to include Vulkan SDK lib directory
-	set_target_properties(cube-demo PROPERTIES
-		BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-		INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-		BUILD_WITH_INSTALL_RPATH FALSE
-		SKIP_BUILD_RPATH FALSE
-	)
+	if(EXISTS ${CMAKE_SOURCE_DIR}/examples/cube_demo.cpp)
+		add_executable(cube-demo examples/cube_demo.cpp)
+		target_link_libraries(cube-demo PRIVATE render-api)
+		target_compile_features(cube-demo PRIVATE cxx_std_17)
 
-	# Set RPATH to include Vulkan SDK lib directory
-	set_target_properties(render-api-example PROPERTIES
-		BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-		INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-		BUILD_WITH_INSTALL_RPATH FALSE
-		SKIP_BUILD_RPATH FALSE
-	)
+		# Set RPATH to include Vulkan SDK lib directory
+		set_target_properties(cube-demo PROPERTIES
+			BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+			INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
+			BUILD_WITH_INSTALL_RPATH FALSE
+			SKIP_BUILD_RPATH FALSE
+		)
+	else()
+		message(WARNING "examples/cube_demo.cpp not found, skipping cube-demo")
+	endif()
 endif()

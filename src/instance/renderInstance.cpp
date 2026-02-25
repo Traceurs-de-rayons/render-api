@@ -218,7 +218,17 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		queueCreateInfos.push_back(queueInfo);
 	}
 
+	// Query available Vulkan 1.2 features
+	VkPhysicalDeviceVulkan12Features vulkan12Features{};
+	vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	vulkan12Features.bufferDeviceAddress = VK_TRUE;
+	vulkan12Features.descriptorIndexing = VK_TRUE;
+
 	VkPhysicalDeviceFeatures deviceFeatures{};
+	VkPhysicalDeviceFeatures2 deviceFeatures2{};
+	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	deviceFeatures2.pNext = &vulkan12Features;
+	deviceFeatures2.features = deviceFeatures;
 
 	uint32_t availableExtCount = 0;
 	vkEnumerateDeviceExtensionProperties(gpu->physicalDevice, nullptr, &availableExtCount, nullptr);
@@ -235,9 +245,10 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 
 	VkDeviceCreateInfo deviceCreateInfo{};
 	deviceCreateInfo.sType					 = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	deviceCreateInfo.pNext					 = &deviceFeatures2;
 	deviceCreateInfo.queueCreateInfoCount	 = static_cast<uint32_t>(queueCreateInfos.size());
 	deviceCreateInfo.pQueueCreateInfos		 = queueCreateInfos.data();
-	deviceCreateInfo.pEnabledFeatures		 = &deviceFeatures;
+	deviceCreateInfo.pEnabledFeatures		 = nullptr; // Using pNext chain instead
 	deviceCreateInfo.enabledExtensionCount	 = static_cast<uint32_t>(deviceExtensions.size());
 	deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.empty() ? nullptr : deviceExtensions.data();
 

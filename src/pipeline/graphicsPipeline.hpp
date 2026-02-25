@@ -68,7 +68,6 @@ namespace renderApi::gpuTask {
 		uint32_t	   width_			 = 0;
 		uint32_t	   height_			 = 0;
 
-		// Multiple Render Targets support
 		std::vector<VkFormat>		colorFormats_;
 		std::vector<VkImage>		colorImages_;
 		std::vector<VkImageView>	colorImageViews_;
@@ -84,10 +83,15 @@ namespace renderApi::gpuTask {
 		std::vector<VkImage>	   swapchainImages_;
 		std::vector<VkImageView>   swapchainImageViews_;
 		std::vector<VkFramebuffer> swapchainFramebuffers_;
-		uint32_t				   currentFrame_ = 0;
 
-		VkSemaphore imageAvailableSemaphore_ = VK_NULL_HANDLE;
-		VkSemaphore renderFinishedSemaphore_ = VK_NULL_HANDLE;
+		std::vector<VkSemaphore> imageAvailableSemaphores_;
+		std::vector<VkSemaphore> renderFinishedSemaphores_;
+		std::vector<VkFence>	 inFlightFences_;
+		uint32_t				 currentFrame_		= 0;
+		uint32_t				 maxFramesInFlight_ = 3;
+
+		VkPresentModeKHR preferredPresentMode_ = VK_PRESENT_MODE_IMMEDIATE_KHR;
+		uint32_t		 requestedImageCount_  = 0;
 
 		friend class GpuTask;
 
@@ -119,12 +123,14 @@ namespace renderApi::gpuTask {
 		void setDepthFormat(VkFormat format);
 		void addPushConstantRange(VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size);
 
-		// Multiple Render Targets
 		void setColorAttachmentCount(uint32_t count);
 		void setColorAttachmentFormat(uint32_t index, VkFormat format);
 
 		void setOutputTarget(OutputTarget target);
 		void setSDLWindow(SDL_Window* window);
+
+		void setPresentMode(VkPresentModeKHR mode);
+		void setSwapchainImageCount(uint32_t count);
 
 		bool createSwapchain();
 		bool recreateSwapchain();
@@ -135,8 +141,15 @@ namespace renderApi::gpuTask {
 		VkImage		   getSwapchainImage(uint32_t index) const;
 		VkSwapchainKHR getSwapchain() const { return swapchain_; }
 		VkSurfaceKHR   getSurface() const { return surface_; }
-		VkSemaphore	   getImageAvailableSemaphore() const { return imageAvailableSemaphore_; }
-		VkSemaphore	   getRenderFinishedSemaphore() const { return renderFinishedSemaphore_; }
+		VkSemaphore	   getImageAvailableSemaphore() const {
+			   return !imageAvailableSemaphores_.empty() ? imageAvailableSemaphores_[currentFrame_] : VK_NULL_HANDLE;
+		}
+		VkSemaphore getRenderFinishedSemaphore() const {
+			return !renderFinishedSemaphores_.empty() ? renderFinishedSemaphores_[currentFrame_] : VK_NULL_HANDLE;
+		}
+		VkFence	 getInFlightFence() const { return !inFlightFences_.empty() ? inFlightFences_[currentFrame_] : VK_NULL_HANDLE; }
+		uint32_t getCurrentFrame() const { return currentFrame_; }
+		void	 advanceFrame() { currentFrame_ = (currentFrame_ + 1) % maxFramesInFlight_; }
 
 		const std::string& getName() const { return name_; }
 		VkPipeline		   getPipeline() const { return pipeline_; }
