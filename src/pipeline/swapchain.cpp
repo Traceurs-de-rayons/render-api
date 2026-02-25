@@ -156,9 +156,14 @@ bool GraphicsPipeline::createSwapchain() {
 	width_	= extent.width;
 	height_ = extent.height;
 
+	// Initialize image tracking (one fence slot per swapchain image)
+	imagesInFlight_.resize(swapchainImages_.size(), VK_NULL_HANDLE);
+
 	if (imageAvailableSemaphores_.empty()) {
+		// Create acquire semaphores per frame (for vkAcquireNextImageKHR)
 		imageAvailableSemaphores_.resize(maxFramesInFlight_);
-		renderFinishedSemaphores_.resize(maxFramesInFlight_);
+		// Create render finished semaphores per swapchain image (for vkQueuePresentKHR)
+		renderFinishedSemaphores_.resize(swapchainImages_.size());
 		inFlightFences_.resize(maxFramesInFlight_);
 
 		VkSemaphoreCreateInfo semaphoreInfo{};
@@ -168,15 +173,33 @@ bool GraphicsPipeline::createSwapchain() {
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
+		// Create acquire semaphores (one per frame in flight)
 		for (size_t i = 0; i < maxFramesInFlight_; i++) {
-			if (vkCreateSemaphore(gpu_->device, &semaphoreInfo, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
-				vkCreateSemaphore(gpu_->device, &semaphoreInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS ||
-				vkCreateFence(gpu_->device, &fenceInfo, nullptr, &inFlightFences_[i]) != VK_SUCCESS) {
-				std::cerr << "GraphicsPipeline: Failed to create synchronization objects for frame " << i << std::endl;
+			if (vkCreateSemaphore(gpu_->device, &semaphoreInfo, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS) {
+				std::cerr << "GraphicsPipeline: Failed to create acquire semaphore for frame " << i << std::endl;
 				return false;
 			}
 		}
-		std::cout << "GraphicsPipeline: Created " << maxFramesInFlight_ << " frames in flight sync objects" << std::endl;
+
+		// Create render finished semaphores (one per swapchain image)
+		for (size_t i = 0; i < swapchainImages_.size(); i++) {
+			if (vkCreateSemaphore(gpu_->device, &semaphoreInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS) {
+				std::cerr << "GraphicsPipeline: Failed to create render finished semaphore for image " << i << std::endl;
+				return false;
+			}
+		}
+
+		// Create fences per frame in flight
+		for (size_t i = 0; i < maxFramesInFlight_; i++) {
+			if (vkCreateFence(gpu_->device, &fenceInfo, nullptr, &inFlightFences_[i]) != VK_SUCCESS) {
+				std::cerr << "GraphicsPipeline: Failed to create fence for frame " << i << std::endl;
+				return false;
+			}
+		}
+		
+		std::cout << "GraphicsPipeline: Created " << maxFramesInFlight_ << " acquire semaphores (per frame), " 
+				  << swapchainImages_.size() << " render finished semaphores (per image), and " 
+				  << maxFramesInFlight_ << " fences (per frame)" << std::endl;
 	}
 
 	return true;

@@ -84,9 +84,10 @@ namespace renderApi::gpuTask {
 		std::vector<VkImageView>   swapchainImageViews_;
 		std::vector<VkFramebuffer> swapchainFramebuffers_;
 
-		std::vector<VkSemaphore> imageAvailableSemaphores_;
-		std::vector<VkSemaphore> renderFinishedSemaphores_;
+		std::vector<VkSemaphore> imageAvailableSemaphores_;  // Per frame for acquire
+		std::vector<VkSemaphore> renderFinishedSemaphores_;  // Per image for present
 		std::vector<VkFence>	 inFlightFences_;
+		std::vector<VkFence>	 imagesInFlight_;  // Track which fence is using which image
 		uint32_t				 currentFrame_		= 0;
 		uint32_t				 maxFramesInFlight_ = 3;
 
@@ -144,8 +145,8 @@ namespace renderApi::gpuTask {
 		VkSemaphore	   getImageAvailableSemaphore() const {
 			   return !imageAvailableSemaphores_.empty() ? imageAvailableSemaphores_[currentFrame_] : VK_NULL_HANDLE;
 		}
-		VkSemaphore getRenderFinishedSemaphore() const {
-			return !renderFinishedSemaphores_.empty() ? renderFinishedSemaphores_[currentFrame_] : VK_NULL_HANDLE;
+		VkSemaphore getRenderFinishedSemaphore(uint32_t imageIndex) const {
+			return imageIndex < renderFinishedSemaphores_.size() ? renderFinishedSemaphores_[imageIndex] : VK_NULL_HANDLE;
 		}
 		VkFence	 getInFlightFence() const { return !inFlightFences_.empty() ? inFlightFences_[currentFrame_] : VK_NULL_HANDLE; }
 		uint32_t getCurrentFrame() const { return currentFrame_; }

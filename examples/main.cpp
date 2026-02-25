@@ -3,6 +3,9 @@
 #include "gpuTask/gpuTask.hpp"
 #include "pipeline/graphicsPipeline.hpp"
 #include "utils/utils.hpp"
+#include "objLoader.hpp"
+#include "imageLoader.hpp"
+#include "image/image.hpp"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
@@ -16,10 +19,11 @@
 #include <fstream>
 #include "vulkan/vulkan_core.h"
 
-// Structure pour les vertex avec position et couleur
+// Structure pour les vertex avec position, couleur et coordonnées de texture
 struct Vertex {
     float pos[3];
     float color[3];
+    float texCoord[2];
 };
 
 // Structure pour les matrices (push constants)
@@ -172,61 +176,73 @@ int main(int argc, char* argv[]) {
 
     std::cout << "GPU initialisé: " << gpu->name << std::endl;
 
-    // Créer les vertices du cube avec couleurs différentes par face
-    // On duplique les sommets pour avoir des couleurs distinctes par face
-    std::vector<Vertex> vertices = {
-        // Face avant (rouge) - Z+
-        {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}},  // 0
-        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}},  // 1
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}},  // 2
-        {{-0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}},  // 3
+    // Charger le modèle OBJ (ou utiliser un cube par défaut si le fichier n'existe pas)
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
 
-        // Face droite (vert) - X+
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},  // 4
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},  // 5
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},  // 6
-        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},  // 7
+    std::string objPath = (argc > 1) ? argv[1] : "models/cube.obj";
 
-        // Face arrière (bleu) - Z-
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},  // 8
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},  // 9
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},  // 10
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},  // 11
-
-        // Face gauche (jaune) - X-
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}},  // 12
-        {{-0.5f, -0.5f,  0.5f}, {1.0f, 1.0f, 0.0f}},  // 13
-        {{-0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 0.0f}},  // 14
-        {{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}},  // 15
-
-        // Face haut (magenta) - Y+
-        {{-0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 1.0f}},  // 16
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 1.0f}},  // 17
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},  // 18
-        {{-0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},  // 19
-
-        // Face bas (cyan) - Y-
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}},  // 20
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}},  // 21
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 1.0f}},  // 22
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 1.0f}},  // 23
-    };
-
-    // Indices pour les 6 faces du cube (ordre counter-clockwise vu de l'extérieur)
-    std::vector<uint32_t> indices = {
-        // Face avant (Z+) - rouge
-        0, 1, 2,  2, 3, 0,
-        // Face droite (X+) - vert
-        4, 5, 6,  6, 7, 4,
-        // Face arrière (Z-) - bleu
-        8, 9, 10,  10, 11, 8,
-        // Face gauche (X-) - jaune
-        12, 13, 14,  14, 15, 12,
-        // Face haut (Y+) - magenta
-        16, 17, 18,  18, 19, 16,
-        // Face bas (Y-) - cyan
-        20, 21, 22,  22, 23, 20
-    };
+    objLoader::Mesh mesh;
+    if (objLoader::loadOBJ(objPath, mesh)) {
+        // Convertir depuis le format objLoader vers notre format Vertex
+        std::cout << "Conversion du mesh..." << std::endl;
+        for (const auto& v : mesh.vertices) {
+            Vertex vertex;
+            vertex.pos[0] = v.pos[0];
+            vertex.pos[1] = v.pos[1];
+            vertex.pos[2] = v.pos[2];
+            vertex.color[0] = v.color[0];
+            vertex.color[1] = v.color[1];
+            vertex.color[2] = v.color[2];
+            vertex.texCoord[0] = v.texCoord[0];
+            vertex.texCoord[1] = v.texCoord[1];
+            vertices.push_back(vertex);
+        }
+        indices = mesh.indices;
+    } else {
+        // Fallback: créer un cube par défaut
+        std::cout << "Création d'un cube par défaut..." << std::endl;
+        vertices = {
+            // Face avant (rouge) - Z+
+            {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+            {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+            {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+            {{-0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
+            // Face droite (vert) - X+
+            {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+            {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+            {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+            {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+            // Face arrière (bleu) - Z-
+            {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+            {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+            {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+            {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+            // Face gauche (jaune) - X-
+            {{-0.5f, -0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+            {{-0.5f, -0.5f,  0.5f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+            {{-0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+            {{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+            // Face haut (magenta) - Y+
+            {{-0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+            {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+            {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+            {{-0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+            // Face bas (cyan) - Y-
+            {{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+            {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+            {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+            {{-0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        };
+        indices = {
+            0, 1, 2,  2, 3, 0,
+            4, 5, 6,  6, 7, 4,
+            8, 9, 10,  10, 11, 8,
+            12, 13, 14,  14, 15, 12,
+            16, 17, 18,  18, 19, 16,
+            20, 21, 22,  22, 23, 20
+        };
+    }
 
     std::cout << "Création des buffers..." << std::endl;
 
@@ -243,6 +259,44 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Buffers créés (vertices: " << vertices.size()
               << ", indices: " << indices.size() << ")" << std::endl;
+
+    // Créer une texture procédurale (damier)
+    std::cout << "Création de la texture..." << std::endl;
+    const uint32_t texWidth = 256;
+    const uint32_t texHeight = 256;
+    std::vector<uint8_t> textureData(texWidth * texHeight * 4);
+
+    // Générer un pattern de damier
+    for (uint32_t y = 0; y < texHeight; y++) {
+        for (uint32_t x = 0; x < texWidth; x++) {
+            uint32_t idx = (y * texWidth + x) * 4;
+            bool isWhite = ((x / 32) + (y / 32)) % 2 == 0;
+            uint8_t color = isWhite ? 255 : 64;
+            textureData[idx + 0] = color;  // R
+            textureData[idx + 1] = color;  // G
+            textureData[idx + 2] = color;  // B
+            textureData[idx + 3] = 255;    // A
+        }
+    }
+
+    auto texture = renderApi::createTexture2D(
+        gpu,
+        texWidth,
+        texHeight,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        textureData.data(),
+        textureData.size(),
+        true  // generateMipmaps
+    );
+
+    if (!texture.isValid()) {
+        std::cerr << "Erreur création texture" << std::endl;
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    std::cout << "Texture créée (" << texWidth << "x" << texHeight << ")" << std::endl;
 
     // Créer une tâche GPU
     renderApi::gpuTask::GpuTask task("CubeRender", gpu);
@@ -261,13 +315,13 @@ int main(int argc, char* argv[]) {
     pipeline->setOutputTarget(renderApi::gpuTask::OutputTarget::SDL_SURFACE);
     pipeline->setSDLWindow(window);
 
-    pipeline->setPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+    pipeline->setPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
     pipeline->setSwapchainImageCount(2);
 
     try {
         std::cout << "Chargement des shaders..." << std::endl;
-        auto vertexShaderCode = readSpirvFile("shaders/cube.vert.spv");
-        auto fragmentShaderCode = readSpirvFile("shaders/cube.frag.spv");
+        auto vertexShaderCode = readSpirvFile("shaders/textured.vert.spv");
+        auto fragmentShaderCode = readSpirvFile("shaders/textured.frag.spv");
 
         pipeline->setVertexShader(vertexShaderCode);
         pipeline->setFragmentShader(fragmentShaderCode);
@@ -279,10 +333,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Configurer les vertex input
+    // Configurer le vertex input (position, couleur, coordonnées de texture)
     pipeline->addVertexBinding(0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX);
     pipeline->addVertexAttribute(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos));
     pipeline->addVertexAttribute(1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color));
+    pipeline->addVertexAttribute(2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, texCoord));
 
     // Configurer le viewport
     pipeline->setViewport(800, 600);
@@ -298,6 +353,16 @@ int main(int argc, char* argv[]) {
 
     // Push constants pour les matrices
     pipeline->addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ModelViewProj));
+
+    // Activer le descriptor manager pour gérer la texture
+    task.enableDescriptorManager(true);
+    auto* descriptorManager = task.getDescriptorManager();
+
+    // Créer un descriptor set avec la texture
+    auto* descriptorSet = descriptorManager->createSet(0);
+    descriptorSet->addTexture(0, &texture, VK_SHADER_STAGE_FRAGMENT_BIT);  // binding = 0
+
+    std::cout << "Texture ajoutée au descriptor set (binding 0)" << std::endl;
 
     // Ajouter les buffers à la tâche
     task.addVertexBuffer(&vertexBuffer);
@@ -329,19 +394,19 @@ int main(int argc, char* argv[]) {
     geometryPipeline->setVertexShader(...);
     geometryPipeline->setFragmentShader(...);
     // ... configuration ...
-    
+
     // Pipeline 2 : Ombres
     auto* shadowPipeline = task.createGraphicsPipeline("shadows");
     shadowPipeline->setVertexShader(...);
     shadowPipeline->setFragmentShader(...);
     // ... configuration ...
-    
+
     // Pipeline 3 : Particules
     auto* particlePipeline = task.createGraphicsPipeline("particles");
     particlePipeline->setVertexShader(...);
     particlePipeline->setFragmentShader(...);
     // ... configuration ...
-    
+
     task.build();  // ← Crée automatiquement 3 secondary command buffers !
     task.execute(); // ← Tout s'exécute dans l'ordre automatiquement !
     */

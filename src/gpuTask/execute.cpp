@@ -7,7 +7,7 @@
 #include "query/queryPool.hpp"
 #include "renderDevice.hpp"
 
-#include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -42,8 +42,11 @@ void GpuTask::execute() {
 			vkWaitForFences(gpu_->device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
 		}
 
+		// Get the acquire semaphore for this frame
 		VkSemaphore acquireSemaphore = graphicsPipelines_[0]->getImageAvailableSemaphore();
-		VkResult	result =
+		
+		// Acquire next image - this gives us the imageIndex
+		VkResult result =
 				vkAcquireNextImageKHR(gpu_->device, graphicsPipelines_[0]->getSwapchain(), UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE, &imageIndex);
 
 		if (result == VK_TIMEOUT) {
@@ -56,6 +59,14 @@ void GpuTask::execute() {
 			std::cerr << "Failed to acquire swapchain image: " << result << std::endl;
 			return;
 		}
+
+		// Check if this image is already being used by another frame
+		auto& imagesInFlight = graphicsPipelines_[0]->imagesInFlight_;
+		if (imageIndex < imagesInFlight.size() && imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
+			vkWaitForFences(gpu_->device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+		}
+		// Mark this image as now being used by this frame
+		imagesInFlight[imageIndex] = inFlightFence;
 
 		if (inFlightFence != VK_NULL_HANDLE) {
 			vkResetFences(gpu_->device, 1, &inFlightFence);
@@ -311,8 +322,10 @@ void GpuTask::execute() {
 		VkPipelineStageFlags waitStage		 = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
 		if (usesSwapchain) {
+			// Wait on the acquire semaphore (from current frame)
+			// Signal the render finished semaphore (specific to this swapchain image)
 			waitSemaphore	= graphicsPipelines_[0]->getImageAvailableSemaphore();
-			signalSemaphore = graphicsPipelines_[0]->getRenderFinishedSemaphore();
+			signalSemaphore = graphicsPipelines_[0]->getRenderFinishedSemaphore(imageIndex);
 
 			submitInfo.waitSemaphoreCount = 1;
 			submitInfo.pWaitSemaphores	  = &waitSemaphore;

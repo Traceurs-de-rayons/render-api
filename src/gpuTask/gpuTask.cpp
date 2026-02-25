@@ -3,9 +3,6 @@
 #include "buffer/buffer.hpp"
 #include "createDescriptorSetLayout.hpp"
 #include "descriptor/descriptorSetManager.hpp"
-#include "gpuTask/build.cpp"
-#include "gpuTask/execute.cpp"
-#include "gpuTask/secondaryCommandBuffer.cpp"
 #include "pipeline/computePipeline.hpp"
 #include "pipeline/graphicsPipeline.hpp"
 #include "query/queryPool.hpp"
@@ -16,12 +13,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.h>
