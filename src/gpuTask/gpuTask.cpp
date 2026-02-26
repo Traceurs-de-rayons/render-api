@@ -73,6 +73,12 @@ void GpuTask::setIndexedDrawParams(uint32_t indexCount, uint32_t instanceCount, 
 	firstInstance_ = firstInstance;
 }
 
+void GpuTask::setMeshTaskCount(uint32_t x, uint32_t y, uint32_t z) {
+	meshTaskCountX_ = x;
+	meshTaskCountY_ = y;
+	meshTaskCountZ_ = z;
+}
+
 void GpuTask::removeBuffer(Buffer* buffer) {
 	if (isBuilt_) {
 		std::cerr << "Cannot remove buffer from built GPU task. Call destroy() first." << std::endl;

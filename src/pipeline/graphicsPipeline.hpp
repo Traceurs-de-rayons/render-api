@@ -1,6 +1,8 @@
 #ifndef GRAPHICS_PIPELINE_HPP
 #define GRAPHICS_PIPELINE_HPP
 
+#include "device/renderDevice.hpp"
+
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -14,10 +16,6 @@ namespace renderApi {
 	class Buffer;
 	enum class BufferType;
 } // namespace renderApi
-
-namespace renderApi::device {
-	struct GPU;
-}
 
 namespace renderApi::gpuTask {
 
@@ -35,6 +33,8 @@ namespace renderApi::gpuTask {
 
 		VkShaderModule	 vertexShader_	 = VK_NULL_HANDLE;
 		VkShaderModule	 fragmentShader_ = VK_NULL_HANDLE;
+		VkShaderModule	 taskShader_	 = VK_NULL_HANDLE;
+		VkShaderModule	 meshShader_	 = VK_NULL_HANDLE;
 		VkPipeline		 pipeline_		 = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 		VkRenderPass	 renderPass_	 = VK_NULL_HANDLE;
@@ -74,7 +74,8 @@ namespace renderApi::gpuTask {
 		std::vector<VkDeviceMemory> colorImageMemories_;
 		uint32_t					colorAttachmentCount_ = 1;
 
-		bool enabled_ = true;
+		bool enabled_		= true;
+		bool useMeshShader_ = false;
 
 		OutputTarget			   outputTarget_ = OutputTarget::BUFFER;
 		SDL_Window*				   window_		 = nullptr;
@@ -84,10 +85,10 @@ namespace renderApi::gpuTask {
 		std::vector<VkImageView>   swapchainImageViews_;
 		std::vector<VkFramebuffer> swapchainFramebuffers_;
 
-		std::vector<VkSemaphore> imageAvailableSemaphores_;  // Per frame for acquire
-		std::vector<VkSemaphore> renderFinishedSemaphores_;  // Per image for present
+		std::vector<VkSemaphore> imageAvailableSemaphores_; // Per frame for acquire
+		std::vector<VkSemaphore> renderFinishedSemaphores_; // Per image for present
 		std::vector<VkFence>	 inFlightFences_;
-		std::vector<VkFence>	 imagesInFlight_;  // Track which fence is using which image
+		std::vector<VkFence>	 imagesInFlight_; // Track which fence is using which image
 		uint32_t				 currentFrame_		= 0;
 		uint32_t				 maxFramesInFlight_ = 3;
 
@@ -106,6 +107,8 @@ namespace renderApi::gpuTask {
 
 		void setVertexShader(const std::vector<uint32_t>& spvCode);
 		void setFragmentShader(const std::vector<uint32_t>& spvCode);
+		void setTaskShader(const std::vector<uint32_t>& spvCode);
+		void setMeshShader(const std::vector<uint32_t>& spvCode);
 
 		void setVertexInputState(const VkPipelineVertexInputStateCreateInfo& vertexInputInfo);
 		void addVertexBinding(uint32_t binding, uint32_t stride, VkVertexInputRate inputRate = VK_VERTEX_INPUT_RATE_VERTEX);
@@ -166,6 +169,9 @@ namespace renderApi::gpuTask {
 
 		void setEnabled(bool enabled) { enabled_ = enabled; }
 		bool isEnabled() const { return enabled_; }
+
+		bool isUsingMeshShader() const { return useMeshShader_; }
+		bool isMeshShaderSupported() const { return gpu_ && gpu_->meshShaderSupported; }
 
 		VkFence getRenderFence() const { return renderFence_; }
 

@@ -227,6 +227,68 @@ void GraphicsPipeline::setFragmentShader(const std::vector<uint32_t>& spvCode) {
 	shaderStages_.push_back(stageInfo);
 }
 
+void GraphicsPipeline::setTaskShader(const std::vector<uint32_t>& spvCode) {
+	if (!gpu_) {
+		std::cerr << "GraphicsPipeline: GPU not initialized" << std::endl;
+		return;
+	}
+
+	if (!gpu_->meshShaderSupported) {
+		std::cerr << "GraphicsPipeline: Task shader not supported on this device" << std::endl;
+		return;
+	}
+
+	VkShaderModuleCreateInfo createInfo{};
+	createInfo.sType	= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.codeSize = spvCode.size() * sizeof(uint32_t);
+	createInfo.pCode	= spvCode.data();
+
+	if (vkCreateShaderModule(gpu_->device, &createInfo, nullptr, &taskShader_) != VK_SUCCESS) {
+		std::cerr << "GraphicsPipeline: Failed to create task shader module" << std::endl;
+		return;
+	}
+
+	VkPipelineShaderStageCreateInfo stageInfo{};
+	stageInfo.sType	 = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stageInfo.stage	 = VK_SHADER_STAGE_TASK_BIT_EXT;
+	stageInfo.module = taskShader_;
+	stageInfo.pName	 = "main";
+
+	shaderStages_.push_back(stageInfo);
+	useMeshShader_ = true;
+}
+
+void GraphicsPipeline::setMeshShader(const std::vector<uint32_t>& spvCode) {
+	if (!gpu_) {
+		std::cerr << "GraphicsPipeline: GPU not initialized" << std::endl;
+		return;
+	}
+
+	if (!gpu_->meshShaderSupported) {
+		std::cerr << "GraphicsPipeline: Mesh shader not supported on this device" << std::endl;
+		return;
+	}
+
+	VkShaderModuleCreateInfo createInfo{};
+	createInfo.sType	= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.codeSize = spvCode.size() * sizeof(uint32_t);
+	createInfo.pCode	= spvCode.data();
+
+	if (vkCreateShaderModule(gpu_->device, &createInfo, nullptr, &meshShader_) != VK_SUCCESS) {
+		std::cerr << "GraphicsPipeline: Failed to create mesh shader module" << std::endl;
+		return;
+	}
+
+	VkPipelineShaderStageCreateInfo stageInfo{};
+	stageInfo.sType	 = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stageInfo.stage	 = VK_SHADER_STAGE_MESH_BIT_EXT;
+	stageInfo.module = meshShader_;
+	stageInfo.pName	 = "main";
+
+	shaderStages_.push_back(stageInfo);
+	useMeshShader_ = true;
+}
+
 void GraphicsPipeline::setVertexInputState(const VkPipelineVertexInputStateCreateInfo& vertexInputInfo) { vertexInputInfo_ = vertexInputInfo; }
 
 void GraphicsPipeline::setInputAssemblyState(const VkPipelineInputAssemblyStateCreateInfo& inputAssemblyInfo) {

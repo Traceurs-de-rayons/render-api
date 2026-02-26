@@ -72,6 +72,8 @@ namespace renderApi::device {
 		std::mutex								  queueMutex;
 		std::string								  name;
 
+		bool meshShaderSupported = false;
+
 		~GPU();
 		void			cleanup();
 		VkCommandBuffer beginOneTimeCommands();

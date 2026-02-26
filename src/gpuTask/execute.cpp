@@ -16,12 +16,37 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
+#ifndef VK_EXT_mesh_shader
+#define VK_EXT_mesh_shader			 1
+#define VK_SHADER_STAGE_TASK_BIT_EXT ((VkShaderStageFlagBits)0x40)
+#define VK_SHADER_STAGE_MESH_BIT_EXT ((VkShaderStageFlagBits)0x80)
+typedef VkResult(VKAPI_PTR* PFN_vkCmdDrawMeshTasksEXT)(VkCommandBuffer commandBuffer,
+													   uint32_t		   groupCountX,
+													   uint32_t		   groupCountY,
+													   uint32_t		   groupCountZ);
+typedef VkResult(VKAPI_PTR* PFN_vkCmdDrawMeshTasksIndirectEXT)(
+		VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
+typedef VkResult(VKAPI_PTR* PFN_vkCmdDrawMeshTasksIndirectCountEXT)(VkCommandBuffer commandBuffer,
+																	VkBuffer		buffer,
+																	VkDeviceSize	offset,
+																	VkBuffer		countBuffer,
+																	VkDeviceSize	countBufferOffset,
+																	uint32_t		maxDrawCount,
+																	uint32_t		stride);
+#endif
+
 using namespace renderApi::gpuTask;
+
+static PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT_fn = nullptr;
 
 void GpuTask::execute() {
 	if (!isBuilt_ || !gpu_ || !gpu_->device) {
 		std::cerr << "GpuTask not built" << std::endl;
 		return;
+	}
+
+	if (!vkCmdDrawMeshTasksEXT_fn && gpu_->meshShaderSupported) {
+		vkCmdDrawMeshTasksEXT_fn = (PFN_vkCmdDrawMeshTasksEXT)vkGetDeviceProcAddr(gpu_->device, "vkCmdDrawMeshTasksEXT");
 	}
 
 	uint32_t imageIndex	   = 0;
@@ -44,7 +69,7 @@ void GpuTask::execute() {
 
 		// Get the acquire semaphore for this frame
 		VkSemaphore acquireSemaphore = graphicsPipelines_[0]->getImageAvailableSemaphore();
-		
+
 		// Acquire next image - this gives us the imageIndex
 		VkResult result =
 				vkAcquireNextImageKHR(gpu_->device, graphicsPipelines_[0]->getSwapchain(), UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE, &imageIndex);
@@ -153,7 +178,18 @@ void GpuTask::execute() {
 					vkCmdPushConstants(commandBuffer, pipeline->getLayout(), pc.stageFlags, pc.offset, pc.size, pc.data.data());
 				}
 
-				if (indexBuffer_ != nullptr) {
+				if (pipeline->isUsingMeshShader()) {
+					if (meshTaskCountX_ > 0 || meshTaskCountY_ > 0 || meshTaskCountZ_ > 0) {
+						if (vkCmdDrawMeshTasksEXT_fn) {
+							vkCmdDrawMeshTasksEXT_fn(commandBuffer, meshTaskCountX_, meshTaskCountY_, meshTaskCountZ_);
+						} else {
+							std::cerr << "GpuTask: Mesh shader function not available" << std::endl;
+						}
+					} else {
+						std::cerr << "GpuTask: Mesh shader pipeline used but no task count set. Call setMeshTaskCount() or use classic draw."
+								  << std::endl;
+					}
+				} else if (indexBuffer_ != nullptr) {
 					vkCmdDrawIndexed(commandBuffer, indexCount_, instanceCount_, firstIndex_, vertexOffset_, firstInstance_);
 				} else {
 					vkCmdDraw(commandBuffer, vertexCount_, instanceCount_, firstVertex_, firstInstance_);
@@ -237,7 +273,17 @@ void GpuTask::execute() {
 							vkCmdPushConstants(secondaryBuffer, pipeline->getLayout(), pc.stageFlags, pc.offset, pc.size, pc.data.data());
 						}
 
-						if (indexBuffer_ != nullptr) {
+						if (pipeline->isUsingMeshShader()) {
+							if (meshTaskCountX_ > 0 || meshTaskCountY_ > 0 || meshTaskCountZ_ > 0) {
+								if (vkCmdDrawMeshTasksEXT_fn) {
+									vkCmdDrawMeshTasksEXT_fn(secondaryBuffer, meshTaskCountX_, meshTaskCountY_, meshTaskCountZ_);
+								} else {
+									std::cerr << "GpuTask: Mesh shader function not available" << std::endl;
+								}
+							} else {
+								std::cerr << "GpuTask: Mesh shader pipeline used but no task count set." << std::endl;
+							}
+						} else if (indexBuffer_ != nullptr) {
 							vkCmdDrawIndexed(secondaryBuffer, indexCount_, instanceCount_, firstIndex_, vertexOffset_, firstInstance_);
 						} else {
 							vkCmdDraw(secondaryBuffer, vertexCount_, instanceCount_, firstVertex_, firstInstance_);

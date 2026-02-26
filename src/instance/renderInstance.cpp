@@ -73,7 +73,7 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 RenderInstance::~RenderInstance() {
 	// Les destructeurs des GPUs vont gérer l'arrêt de leurs threads
 	gpus_.clear();
-	
+
 	if (instance_) {
 		vkDestroyInstance(instance_, nullptr);
 		instance_ = nullptr;
@@ -220,17 +220,17 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 
 	// Query available Vulkan 1.2 features
 	VkPhysicalDeviceVulkan12Features vulkan12Features{};
-	vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	vulkan12Features.sType				 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	vulkan12Features.bufferDeviceAddress = VK_TRUE;
-	vulkan12Features.descriptorIndexing = VK_TRUE;
+	vulkan12Features.descriptorIndexing	 = VK_TRUE;
 
-	VkPhysicalDeviceFeatures deviceFeatures{};
-	VkPhysicalDeviceFeatures2 deviceFeatures2{};
-	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	deviceFeatures2.pNext = &vulkan12Features;
-	deviceFeatures2.features = deviceFeatures;
+	VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
+	meshShaderFeatures.sType	  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+	meshShaderFeatures.meshShader = VK_FALSE;
+	meshShaderFeatures.taskShader = VK_FALSE;
 
-	uint32_t availableExtCount = 0;
+	bool	 meshShaderSupported = false;
+	uint32_t availableExtCount	 = 0;
 	vkEnumerateDeviceExtensionProperties(gpu->physicalDevice, nullptr, &availableExtCount, nullptr);
 	std::vector<VkExtensionProperties> availableExts(availableExtCount);
 	vkEnumerateDeviceExtensionProperties(gpu->physicalDevice, nullptr, &availableExtCount, availableExts.data());
@@ -239,9 +239,20 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 	for (const auto& ext : availableExts) {
 		if (std::string(ext.extensionName) == VK_KHR_SWAPCHAIN_EXTENSION_NAME) {
 			deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-			break;
+		}
+		if (std::string(ext.extensionName) == VK_EXT_MESH_SHADER_EXTENSION_NAME) {
+			deviceExtensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+			meshShaderSupported = true;
 		}
 	}
+
+	vulkan12Features.pNext = &meshShaderFeatures;
+
+	VkPhysicalDeviceFeatures  deviceFeatures{};
+	VkPhysicalDeviceFeatures2 deviceFeatures2{};
+	deviceFeatures2.sType	 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	deviceFeatures2.pNext	 = &vulkan12Features;
+	deviceFeatures2.features = deviceFeatures;
 
 	VkDeviceCreateInfo deviceCreateInfo{};
 	deviceCreateInfo.sType					 = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -255,6 +266,14 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 	VkResult result = vkCreateDevice(gpu->physicalDevice, &deviceCreateInfo, nullptr, &gpu->device);
 	if (result != VK_SUCCESS) {
 		return VK_CREATE_DEVICE_FAILED;
+	}
+
+	gpu->meshShaderSupported = meshShaderSupported && meshShaderFeatures.meshShader;
+	if (meshShaderSupported) {
+		std::cout << "  Mesh Shader: " << (gpu->meshShaderSupported ? "supported" : "not supported by device") << std::endl;
+		if (!gpu->meshShaderSupported && meshShaderFeatures.taskShader) {
+			std::cout << "    (Task shader only - no mesh shader)" << std::endl;
+		}
 	}
 
 	// Retrieve queues

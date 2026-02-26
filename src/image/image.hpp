@@ -5,7 +5,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <memory>
 #include <vulkan/vulkan_core.h>
 
 namespace renderApi {

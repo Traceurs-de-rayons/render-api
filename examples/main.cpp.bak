@@ -139,13 +139,11 @@ static bool loadMeshOrFallback(
 
 int main(int argc, char* argv[]) {
     try {
-        // constexpr int   kWidth  = 800;
-        // constexpr int   kHeight = 600;
-        constexpr int   kWidth  = 3840;
-        constexpr int   kHeight = 2160;
+        constexpr int   kWidth  = 800;
+        constexpr int   kHeight = 600;
         constexpr float kFov    = 3.14159f / 4.0f;
         constexpr float kNear   = 0.1f;
-        constexpr float kFar    = 1000.0f;
+        constexpr float kFar    = 100.0f;
         constexpr float kRotSpeed = 0.8f;
 
         std::cout << "=== Render API Cube Demo ===\n";
@@ -168,7 +166,11 @@ int main(int argc, char* argv[]) {
         INIT_RENDER_API;
 
         renderApi::instance::Config instanceConfig;
+#ifdef NDEBUG
         instanceConfig = renderApi::instance::Config::ReleaseDefault("CubeDemo");
+#else
+        instanceConfig = renderApi::instance::Config::DebugDefault("CubeDemo");
+#endif
         instanceConfig.extensions = extensions;
 
         const auto instanceInit = renderApi::initNewInstance(instanceConfig);
@@ -219,7 +221,7 @@ int main(int argc, char* argv[]) {
 
         auto texture = renderApi::createTexture2D(
             gpu, texW, texH, VK_FORMAT_R8G8B8A8_UNORM,
-            textureData.data(), textureData.size(), false
+            textureData.data(), textureData.size(), true
         );
         if (!texture.isValid()) throw std::runtime_error("Texture creation failed");
 
@@ -284,7 +286,7 @@ int main(int argc, char* argv[]) {
                             cameraDistance = std::max(1.0f, cameraDistance - 0.5f);
                             break;
                         case SDLK_DOWN:
-                            cameraDistance = std::min(100.0f, cameraDistance + 0.5f);
+                            cameraDistance = std::min(10.0f, cameraDistance + 0.5f);
                             break;
                         default: break;
                     }

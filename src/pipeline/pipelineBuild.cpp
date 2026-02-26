@@ -23,6 +23,27 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 		return false;
 	}
 
+	if (useMeshShader_ && !gpu_->meshShaderSupported) {
+		std::cerr << "GraphicsPipeline: Mesh shader requested but not supported by device. Falling back to classic pipeline." << std::endl;
+		std::cerr << "  To use mesh shaders, please ensure your GPU supports VK_EXT_mesh_shader" << std::endl;
+
+		useMeshShader_ = false;
+
+		std::vector<VkPipelineShaderStageCreateInfo> classicStages;
+		for (const auto& stage : shaderStages_) {
+			if (stage.stage == VK_SHADER_STAGE_VERTEX_BIT || stage.stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
+				classicStages.push_back(stage);
+			}
+		}
+
+		shaderStages_ = classicStages;
+
+		if (shaderStages_.empty()) {
+			std::cerr << "GraphicsPipeline: No classic shaders available after fallback" << std::endl;
+			return false;
+		}
+	}
+
 	width_ = height_ = height;
 
 	if (outputTarget_ == OutputTarget::SDL_SURFACE && surface_ != VK_NULL_HANDLE) {
