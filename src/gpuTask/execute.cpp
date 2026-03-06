@@ -197,6 +197,12 @@ void GpuTask::execute() {
 			}
 		}
 
+		if (!renderPassCallbacks_.empty()) {
+			for (const auto& callback : renderPassCallbacks_) {
+				callback(commandBuffer, currentFrame_, imageIndex);
+			}
+		}
+
 		vkCmdEndRenderPass(commandBuffer);
 	} else if (!graphicsPipelines_.empty() && !secondaryCommandBuffers_.empty()) {
 		std::vector<VkClearValue> clearValues(2);
@@ -353,11 +359,22 @@ void GpuTask::execute() {
 	submitInfo.signalSemaphoreCount = 0;
 	submitInfo.pSignalSemaphores	= nullptr;
 
-	VkQueue queue;
-	if (!graphicsPipelines_.empty() && !gpu_->graphicsQueues.empty()) {
-		queue = gpu_->graphicsQueues[0];
+	VkQueue queue = VK_NULL_HANDLE;
+	if (!graphicsPipelines_.empty()) {
+		if (!gpu_->graphicsQueues.empty()) {
+			queue = gpu_->graphicsQueues[0];
+		}
 	} else {
-		queue = gpu_->computeQueues[0];
+		if (!gpu_->computeQueues.empty()) {
+			queue = gpu_->computeQueues[0];
+		} else if (!gpu_->graphicsQueues.empty()) {
+			queue = gpu_->graphicsQueues[0];
+		}
+	}
+
+	if (queue == VK_NULL_HANDLE) {
+		std::cerr << "Failed to submit queue: no available graphics or compute queue" << std::endl;
+		return;
 	}
 
 	{
@@ -393,8 +410,9 @@ void GpuTask::execute() {
 			vkResetFences(gpu_->device, 1, &submitFence);
 		}
 
-		if (vkQueueSubmit(queue, 1, &submitInfo, submitFence) != VK_SUCCESS) {
-			std::cerr << "Failed to submit queue" << std::endl;
+		VkResult submitResult = vkQueueSubmit(queue, 1, &submitInfo, submitFence);
+		if (submitResult != VK_SUCCESS) {
+			std::cerr << "Failed to submit queue: " << submitResult << std::endl;
 			return;
 		}
 

@@ -32,12 +32,13 @@ namespace renderApi::descriptor {
 		DescriptorType	 type;
 		uint32_t		 count;
 		VkShaderStageFlags stageFlags;
-		
+
 		// Resource pointers (only one should be set based on type)
 		Buffer*  buffer	 = nullptr;
 		Texture* texture = nullptr;
 		Image*	 image	 = nullptr;
 		Sampler* sampler = nullptr;
+		std::vector<Texture*> textureArray; // For bindless texture arrays
 	};
 
 	class DescriptorSet {
@@ -53,6 +54,7 @@ namespace renderApi::descriptor {
 		void addBinding(const DescriptorBinding& binding);
 		void addBuffer(uint32_t binding, Buffer* buffer, DescriptorType type, VkShaderStageFlags stages);
 		void addTexture(uint32_t binding, Texture* texture, VkShaderStageFlags stages);
+		void addTextureArray(uint32_t binding, const std::vector<Texture*>& textures, VkShaderStageFlags stages);
 		void addImage(uint32_t binding, Image* image, DescriptorType type, VkShaderStageFlags stages);
 		void addSampler(uint32_t binding, Sampler* sampler, VkShaderStageFlags stages);
 

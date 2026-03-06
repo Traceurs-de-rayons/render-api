@@ -220,12 +220,13 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 		return false;
 	}
 
-	if (transferFence_ != VK_NULL_HANDLE) {
+	const bool usesHostVisibleMapping = (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING);
+	if (!usesHostVisibleMapping && transferFence_ != VK_NULL_HANDLE) {
 		vkWaitForFences(gpu_->device, 1, &transferFence_, VK_TRUE, UINT64_MAX);
 		vkResetFences(gpu_->device, 1, &transferFence_);
 	}
 
-	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING) {
+	if (usesHostVisibleMapping) {
 		void* dst = map();
 		if (!dst) return false;
 		memcpy(static_cast<char*>(dst) + offset, data, size);
@@ -262,12 +263,13 @@ bool Buffer::download(void* data, size_t size, size_t offset) {
 		return false;
 	}
 
-	if (transferFence_ != VK_NULL_HANDLE) {
+	const bool usesHostVisibleMapping = (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING);
+	if (!usesHostVisibleMapping && transferFence_ != VK_NULL_HANDLE) {
 		vkWaitForFences(gpu_->device, 1, &transferFence_, VK_TRUE, UINT64_MAX);
 		vkResetFences(gpu_->device, 1, &transferFence_);
 	}
 
-	if (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING) {
+	if (usesHostVisibleMapping) {
 		void* src = map();
 		if (!src) return false;
 		memcpy(data, static_cast<char*>(src) + offset, size);

@@ -2,6 +2,7 @@
 
 #include "renderDevice.hpp"
 
+#include <X11/Xlib.h>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -14,12 +15,9 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#if defined(__linux__)
-#include <X11/Xlib.h>
-#include <vulkan/vulkan_xlib.h>
-#endif
+#include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_xlib.h>
 
 using namespace renderApi::instance;
 using namespace renderApi::device;
@@ -28,27 +26,28 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 	VkApplicationInfo	 appInfo{};
 	VkInstanceCreateInfo createInfo{};
 
-	appInfo.sType			   = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	appInfo.pApplicationName   = config_.appName.c_str();
+	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	appInfo.pApplicationName = config_.appName.c_str();
 	appInfo.applicationVersion = config_.appVersion;
-	appInfo.pEngineName		   = config_.engineName.c_str();
-	appInfo.engineVersion	   = config_.engineVersion;
-	appInfo.apiVersion		   = config_.apiVersion;
+	appInfo.pEngineName = config_.engineName.c_str();
+	appInfo.engineVersion = config_.engineVersion;
+	appInfo.apiVersion = config_.apiVersion;
 
-	createInfo.sType			= VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	createInfo.pApplicationInfo = &appInfo;
 
 	std::vector<const char*> instanceExtensions = config_.extensions;
-	bool					 hasSurface			= false;
+	bool					 hasSurface = false;
+
 	for (const auto& ext : instanceExtensions) {
 		if (std::string(ext) == VK_KHR_SURFACE_EXTENSION_NAME) {
 			hasSurface = true;
 			break;
 		}
 	}
-	if (!hasSurface) {
+
+	if (!hasSurface)
 		instanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
-	}
 
 	bool hasXlibSurface = false;
 	for (const auto& ext : instanceExtensions) {
@@ -71,7 +70,6 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 }
 
 RenderInstance::~RenderInstance() {
-	// Les destructeurs des GPUs vont gérer l'arrêt de leurs threads
 	gpus_.clear();
 
 	if (instance_) {
@@ -202,7 +200,6 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		familyQueueCount[familyIndex] = actualTotal;
 	}
 
-	// Create queue create infos
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 	std::vector<std::vector<float>>		 queuePriorities;
 
@@ -218,11 +215,14 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		queueCreateInfos.push_back(queueInfo);
 	}
 
-	// Query available Vulkan 1.2 features
 	VkPhysicalDeviceVulkan12Features vulkan12Features{};
 	vulkan12Features.sType				 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	vulkan12Features.bufferDeviceAddress = VK_TRUE;
 	vulkan12Features.descriptorIndexing	 = VK_TRUE;
+	vulkan12Features.runtimeDescriptorArray = VK_TRUE;
+	vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
+	vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+	vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
 	VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
 	meshShaderFeatures.sType	  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
@@ -276,7 +276,6 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		}
 	}
 
-	// Retrieve queues
 	std::map<int, uint32_t> familyCurrentIndex;
 
 	if (families.graphicsFamily >= 0 && actualGraphicsCount.count(families.graphicsFamily)) {

@@ -62,6 +62,7 @@ namespace renderApi::gpuTask {
 		std::vector<SecondaryCommandBuffer> secondaryCommandBuffers_;
 
 		std::vector<RecordingCallback> recordingCallbacks_;
+		std::vector<RecordingCallback> renderPassCallbacks_;
 		bool						   useCustomRecording_ = false;
 
 		std::vector<Buffer*>			buffers_;
@@ -118,6 +119,8 @@ namespace renderApi::gpuTask {
 
 		void addRecordingCallback(RecordingCallback callback);
 		void clearRecordingCallbacks();
+		void addRenderPassCallback(RecordingCallback callback);
+		void clearRenderPassCallbacks();
 		void setUseCustomRecording(bool useCustom) { useCustomRecording_ = useCustom; }
 		bool isUsingCustomRecording() const { return useCustomRecording_; }
 

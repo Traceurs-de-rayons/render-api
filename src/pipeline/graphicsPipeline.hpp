@@ -95,6 +95,10 @@ namespace renderApi::gpuTask {
 		VkPresentModeKHR preferredPresentMode_ = VK_PRESENT_MODE_IMMEDIATE_KHR;
 		uint32_t		 requestedImageCount_  = 0;
 
+		bool createDepthResources();
+		void destroyDepthResources();
+		bool createSwapchainFramebuffers();
+
 		friend class GpuTask;
 
 	  public:
@@ -161,6 +165,7 @@ namespace renderApi::gpuTask {
 		VkRenderPass	   getRenderPass() const { return renderPass_; }
 		VkFramebuffer	   getFramebuffer() const { return framebuffer_; }
 		VkImage			   getColorImage(uint32_t index = 0) const { return index < colorImages_.size() ? colorImages_[index] : VK_NULL_HANDLE; }
+		VkImageView		   getColorImageView(uint32_t index = 0) const { return index < colorImageViews_.size() ? colorImageViews_[index] : VK_NULL_HANDLE; }
 		VkFormat	 getColorFormat(uint32_t index = 0) const { return index < colorFormats_.size() ? colorFormats_[index] : VK_FORMAT_UNDEFINED; }
 		uint32_t	 getColorAttachmentCount() const { return colorAttachmentCount_; }
 		uint32_t	 getWidth() const { return width_; }

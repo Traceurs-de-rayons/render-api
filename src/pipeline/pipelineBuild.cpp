@@ -44,7 +44,8 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 		}
 	}
 
-	width_ = height_ = height;
+	width_ = width;
+	height_ = height;
 
 	if (outputTarget_ == OutputTarget::SDL_SURFACE && surface_ != VK_NULL_HANDLE) {
 		if (!createSwapchain()) {

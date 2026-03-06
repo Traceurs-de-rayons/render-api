@@ -6,27 +6,73 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Custom Vulkan SDK path - use environment variable if available, otherwise use default
-if(DEFINED ENV{VULKAN_SDK})
-	set(VULKAN_SDK_PATH "$ENV{VULKAN_SDK}" CACHE PATH "Path to Vulkan SDK")
-	# Check if VULKAN_SDK already includes x86_64 path
-	if(EXISTS "${VULKAN_SDK_PATH}/include/vulkan/vulkan.h")
-		set(VULKAN_ARCH_PATH "${VULKAN_SDK_PATH}")
-	else()
-		set(VULKAN_ARCH_PATH "${VULKAN_SDK_PATH}/x86_64")
+# Custom Vulkan SDK path resolution
+set(VULKAN_SDK_PATH "" CACHE PATH "Path to Vulkan SDK")
+
+function(_resolve_vulkan_sdk candidate_var)
+	set(_result "")
+	foreach(_candidate IN LISTS ARGN)
+		if(NOT _candidate)
+			continue()
+		endif()
+		file(TO_CMAKE_PATH "${_candidate}" _candidate_normalized)
+		if(NOT IS_DIRECTORY "${_candidate_normalized}")
+			continue()
+		endif()
+		if(EXISTS "${_candidate_normalized}/x86_64/include/vulkan/vulkan.h")
+			set(_result "${_candidate_normalized}")
+			break()
+		endif()
+		file(GLOB _child_versions LIST_DIRECTORIES true "${_candidate_normalized}/*")
+		list(SORT _child_versions)
+		list(REVERSE _child_versions)
+		foreach(_child IN LISTS _child_versions)
+			if(EXISTS "${_child}/x86_64/include/vulkan/vulkan.h")
+				set(_result "${_child}")
+				break()
+			endif()
+		endforeach()
+		if(_result)
+			break()
+		endif()
+	endforeach()
+	set(${candidate_var} "${_result}" PARENT_SCOPE)
+endfunction()
+
+set(_vulkan_sdk_ready OFF)
+if(VULKAN_SDK_PATH AND EXISTS "${VULKAN_SDK_PATH}/x86_64/include/vulkan/vulkan.h")
+	set(_vulkan_sdk_ready ON)
+endif()
+
+if(NOT _vulkan_sdk_ready)
+	set(_vulkan_candidates)
+	if(DEFINED ENV{VULKAN_SDK} AND NOT "$ENV{VULKAN_SDK}" STREQUAL "")
+		list(APPEND _vulkan_candidates "$ENV{VULKAN_SDK}")
 	endif()
-else()
-	set(VULKAN_SDK_PATH "/home/madelvin/goinfre/vulkansdk-linux-x86_64-1.4.341.1/vulkan-1.4.341.1" CACHE PATH "Path to Vulkan SDK")
-	set(VULKAN_ARCH_PATH "${VULKAN_SDK_PATH}/x86_64")
+	list(APPEND _vulkan_candidates
+		"/home/madelvin/Documents/tools/vulkan"
+		"/home/madelvin/goinfre/vulkansdk-linux-x86_64-1.4.341.1/vulkan-1.4.341.1"
+		"/home/madelvin/goinfre"
+	)
+	list(REMOVE_DUPLICATES _vulkan_candidates)
+	_resolve_vulkan_sdk(_detected_vulkan_sdk ${_vulkan_candidates})
+	if(_detected_vulkan_sdk)
+		set(VULKAN_SDK_PATH "${_detected_vulkan_sdk}" CACHE PATH "Path to Vulkan SDK" FORCE)
+		set(_vulkan_sdk_ready ON)
+	endif()
+endif()
+
+if(NOT _vulkan_sdk_ready)
+	message(FATAL_ERROR "Vulkan SDK not found. Set VULKAN_SDK_PATH cache entry or VULKAN_SDK env var to your SDK root (e.g. ~/Documents/tools/vulkan/1.xx.xx).")
 endif()
 
 # Configure Vulkan manually to bypass system installation
-set(VULKAN_INCLUDE_DIR "${VULKAN_ARCH_PATH}/include")
-set(VULKAN_LIBRARY "${VULKAN_ARCH_PATH}/lib/libvulkan.so")
-set(VULKAN_LAYER_PATH "${VULKAN_ARCH_PATH}/share/vulkan/explicit_layer.d")
+set(VULKAN_INCLUDE_DIR "${VULKAN_SDK_PATH}/x86_64/include")
+set(VULKAN_LIBRARY "${VULKAN_SDK_PATH}/x86_64/lib/libvulkan.so")
+set(VULKAN_LAYER_PATH "${VULKAN_SDK_PATH}/x86_64/share/vulkan/explicit_layer.d")
 
 if(NOT EXISTS ${VULKAN_INCLUDE_DIR})
-	message(FATAL_ERROR "Vulkan SDK not found at: ${VULKAN_SDK_PATH}\nPlease update VULKAN_SDK_PATH in CMakeLists.txt")
+	message(FATAL_ERROR "Vulkan SDK include directory not found at: ${VULKAN_INCLUDE_DIR}\nUpdate VULKAN_SDK_PATH.")
 endif()
 
 message(STATUS "Using custom Vulkan SDK: ${VULKAN_SDK_PATH}")
@@ -73,60 +119,3 @@ install(TARGETS render-api
 	INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-# Shader build and installation - copy precompiled .spv shaders
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
-	add_custom_target(shaders ALL
-		COMMAND ${CMAKE_COMMAND} -E copy_directory
-		${CMAKE_CURRENT_SOURCE_DIR}/shaders
-		${CMAKE_BINARY_DIR}/shaders
-		COMMENT "Copying shaders to build directory"
-	)
-
-	add_custom_target(shaders_update
-		COMMAND ${CMAKE_COMMAND} -E copy_directory
-		${CMAKE_CURRENT_SOURCE_DIR}/shaders
-		${CMAKE_BINARY_DIR}/shaders
-		COMMENT "Updating shaders in build directory"
-	)
-
-	install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ DESTINATION shaders FILES_MATCHING PATTERN "*.spv")
-else()
-	message(WARNING "shaders directory not found, skipping shader copy")
-endif()
-
-option(BUILD_RENDER_API_EXAMPLES "Build examples for render-api" OFF)
-
-if(BUILD_RENDER_API_EXAMPLES)
-	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/examples/main.cpp)
-		add_executable(render-api-example examples/main.cpp)
-		target_link_libraries(render-api-example PRIVATE render-api)
-		target_compile_features(render-api-example PRIVATE cxx_std_17)
-
-		# Set RPATH to include Vulkan SDK lib directory
-		set_target_properties(render-api-example PROPERTIES
-			BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-			INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-			BUILD_WITH_INSTALL_RPATH FALSE
-			SKIP_BUILD_RPATH FALSE
-		)
-	else()
-		message(WARNING "examples/main.cpp not found, skipping render-api-example")
-	endif()
-
-	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/examples/cube_demo.cpp)
-		add_executable(cube-demo examples/cube_demo.cpp)
-		target_link_libraries(cube-demo PRIVATE render-api)
-		target_compile_features(cube-demo PRIVATE cxx_std_17)
-
-		# Set RPATH to include Vulkan SDK lib directory
-		set_target_properties(cube-demo PROPERTIES
-			BUILD_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-			INSTALL_RPATH "${VULKAN_SDK_PATH}/x86_64/lib"
-			BUILD_WITH_INSTALL_RPATH FALSE
-			SKIP_BUILD_RPATH FALSE
-		)
-	else()
-		message(WARNING "examples/cube_demo.cpp not found, skipping cube-demo")
-	endif()
-endif()

@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 

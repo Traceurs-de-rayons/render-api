@@ -79,6 +79,15 @@ namespace renderApi::device {
 		VkCommandBuffer beginOneTimeCommands();
 		void			endOneTimeCommands(VkCommandBuffer commandBuffer);
 		VkQueue			getPresentQueue();
+		
+		// Getters for ImGui integration
+		VkInstance getInstance() const { return instance; }
+		VkPhysicalDevice getPhysicalDevice() const { return physicalDevice; }
+		VkDevice getDevice() const { return device; }
+		VkQueue getGraphicsQueue() const { return graphicsQueues.empty() ? VK_NULL_HANDLE : graphicsQueues[0]; }
+		uint32_t getGraphicsQueueFamilyIndex() const { return queueFamilies.graphicsFamily; }
+		VkCommandBuffer beginSingleTimeCommands() { return beginOneTimeCommands(); }
+		void endSingleTimeCommands(VkCommandBuffer cmd) { endOneTimeCommands(cmd); }
 	};
 
 	gpuLoopThreadResult				gpuThreadLoop(renderApi::device::GPU& gpu);

@@ -87,6 +87,15 @@ namespace renderApi {
 		return buffer;
 	}
 
+	template <typename DataType> Buffer createStorageBuffer(device::GPU* gpu, const std::vector<DataType>& data, BufferUsage usage = BufferUsage::STATIC) {
+		Buffer buffer;
+		if (!buffer.create(gpu, data.size() * sizeof(DataType), BufferType::STORAGE, usage)) {
+			return Buffer();
+		}
+		buffer.upload(data.data(), data.size() * sizeof(DataType));
+		return buffer;
+	}
+
 	inline Buffer createStorageBuffer(device::GPU* gpu, size_t size, BufferUsage usage = BufferUsage::STATIC) {
 		Buffer buffer;
 		buffer.create(gpu, size, BufferType::STORAGE, usage);

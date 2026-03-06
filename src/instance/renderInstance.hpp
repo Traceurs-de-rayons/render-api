@@ -1,4 +1,4 @@
-#ifndef RENDER_INSTANCE_HPP
+																																																		#ifndef RENDER_INSTANCE_HPP
 #define RENDER_INSTANCE_HPP
 
 #include "renderDevice.hpp"
@@ -81,6 +81,6 @@ namespace renderApi::instance {
 	};
 
 	bool isInstanceExtensionAvailable(const char* extensionName);
-}; // namespace renderApi::instance
+};
 
 #endif

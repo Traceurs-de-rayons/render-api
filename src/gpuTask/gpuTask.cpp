@@ -118,6 +118,10 @@ void GpuTask::addRecordingCallback(RecordingCallback callback) { recordingCallba
 
 void GpuTask::clearRecordingCallbacks() { recordingCallbacks_.clear(); }
 
+void GpuTask::addRenderPassCallback(RecordingCallback callback) { renderPassCallbacks_.push_back(callback); }
+
+void GpuTask::clearRenderPassCallbacks() { renderPassCallbacks_.clear(); }
+
 void GpuTask::beginDefaultRenderPass(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 	if (graphicsPipelines_.empty()) {
 		std::cerr << "GpuTask: No graphics pipeline available for render pass" << std::endl;

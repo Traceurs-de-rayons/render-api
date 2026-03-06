@@ -115,7 +115,7 @@ InitDeviceResult renderApi::device::finishDeviceInitialization(GPU& gpu) {
 
 GPU::~GPU() {
 	running = false;
-	
+
 	if (finishCode.valid()) {
 		// Attendre maximum 5 secondes pour que le thread se termine (il vérifie running toutes les 1ms)
 		auto status = finishCode.wait_for(std::chrono::seconds(5));

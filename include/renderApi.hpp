@@ -45,7 +45,6 @@ namespace renderApi {
 		}
 	}
 
-	// vk instance
 	instance::InitInstanceResult 			initNewInstance(const instance::Config& config);
 	std::vector<instance::RenderInstance>&	getInstances();
 	instance::RenderInstance*				getInstance(int index);
