@@ -71,7 +71,7 @@ namespace renderApi::instance {
 		VkInstance										 getInstance() const { return instance_; }
 		const Config&									 getConfig() const { return config_; }
 		const std::vector<std::unique_ptr<device::GPU>>& getGPUs() const { return gpus_; }
-		device::GPU* getGPU(int index) const { return gpus_.size() <= index ? nullptr : gpus_[index].get(); }
+		device::GPU* getGPU(int index) const { return gpus_.size() <= static_cast<size_t>(index) ? nullptr : gpus_[index].get(); }
 		device::GPU* getGPU(const std::string& name) const {
 			for (const auto& gpu : gpus_)
 				if (gpu->name == name)
