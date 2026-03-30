@@ -53,3 +53,13 @@ instance::RenderInstance* renderApi::getInstance(std::string name) {
 void renderApi::Api::cleanup() {
 	getInstancesVector().clear();
 }
+
+void renderApi::toogleRender() {
+	auto& instances = getInstancesVector();
+	for (auto& instance : instances) {
+	    for (auto& gpu : instance.getGPUs()) {
+			gpu->renderEnabled = !gpu->renderEnabled;
+			std::cout << "GPU " << gpu->name << " renderEnabled: " << gpu->renderEnabled << std::endl;
+		}
+	}
+}

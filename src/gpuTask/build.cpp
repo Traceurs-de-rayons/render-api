@@ -219,7 +219,7 @@ void GpuTask::destroy() {
 		queryPool_->destroy();
 	}
 
-	if (fence_ != VK_NULL_HANDLE) {
+	if (fence_ != VK_NULL_HANDLE && gpu_ && gpu_->device) {
 		vkDestroyFence(gpu_->device, fence_, nullptr);
 		fence_ = VK_NULL_HANDLE;
 	}
@@ -231,33 +231,33 @@ void GpuTask::destroy() {
 				buffersToFree.push_back(scb.buffer);
 			}
 		}
-		if (!buffersToFree.empty()) {
+		if (!buffersToFree.empty() && gpu_ && gpu_->device) {
 			vkFreeCommandBuffers(gpu_->device, commandPool_, static_cast<uint32_t>(buffersToFree.size()), buffersToFree.data());
 		}
 		secondaryCommandBuffers_.clear();
 	}
 
-	if (!commandBuffers_.empty() && commandPool_ != VK_NULL_HANDLE) {
+	if (!commandBuffers_.empty() && commandPool_ != VK_NULL_HANDLE && gpu_ && gpu_->device) {
 		vkFreeCommandBuffers(gpu_->device, commandPool_, static_cast<uint32_t>(commandBuffers_.size()), commandBuffers_.data());
 		commandBuffers_.clear();
 	}
 
-	if (commandPool_ != VK_NULL_HANDLE) {
+	if (commandPool_ != VK_NULL_HANDLE && gpu_ && gpu_->device) {
 		vkDestroyCommandPool(gpu_->device, commandPool_, nullptr);
 		commandPool_ = VK_NULL_HANDLE;
 	}
 
-	if (descriptorSet_ != VK_NULL_HANDLE && descriptorPool_ != VK_NULL_HANDLE) {
+	if (descriptorSet_ != VK_NULL_HANDLE && descriptorPool_ != VK_NULL_HANDLE && gpu_ && gpu_->device) {
 		vkFreeDescriptorSets(gpu_->device, descriptorPool_, 1, &descriptorSet_);
 		descriptorSet_ = VK_NULL_HANDLE;
 	}
 
-	if (descriptorPool_ != VK_NULL_HANDLE) {
+	if (descriptorPool_ != VK_NULL_HANDLE && gpu_ && gpu_->device) {
 		vkDestroyDescriptorPool(gpu_->device, descriptorPool_, nullptr);
 		descriptorPool_ = VK_NULL_HANDLE;
 	}
 
-	if (descriptorSetLayout_ != VK_NULL_HANDLE) {
+	if (descriptorSetLayout_ != VK_NULL_HANDLE && gpu_ && gpu_->device) {
 		destroyDescriptorSetLayout(gpu_->device, descriptorSetLayout_);
 		descriptorSetLayout_ = VK_NULL_HANDLE;
 	}

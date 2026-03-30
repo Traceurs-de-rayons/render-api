@@ -71,6 +71,7 @@ namespace renderApi::device {
 		std::mutex								  GpuTasksMutex;
 		std::mutex								  queueMutex;
 		std::string								  name;
+		std::atomic_bool						  renderEnabled = true;
 
 		bool meshShaderSupported = false;
 
@@ -79,7 +80,7 @@ namespace renderApi::device {
 		VkCommandBuffer beginOneTimeCommands();
 		void			endOneTimeCommands(VkCommandBuffer commandBuffer);
 		VkQueue			getPresentQueue();
-		
+
 		// Getters for ImGui integration
 		VkInstance getInstance() const { return instance; }
 		VkPhysicalDevice getPhysicalDevice() const { return physicalDevice; }

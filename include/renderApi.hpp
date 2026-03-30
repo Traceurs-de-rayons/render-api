@@ -49,6 +49,7 @@ namespace renderApi {
 	std::vector<instance::RenderInstance>&	getInstances();
 	instance::RenderInstance*				getInstance(int index);
 	instance::RenderInstance*				getInstance(std::string name);
+	void                                    toogleRender();
 
 }
 

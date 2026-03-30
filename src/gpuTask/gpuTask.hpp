@@ -1,6 +1,7 @@
 #ifndef GPUTASK_HPP
 #define GPUTASK_HPP
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -95,7 +96,7 @@ namespace renderApi::gpuTask {
 		std::vector<PushConstantData> pushConstants_;
 
 		bool isBuilt_	  = false;
-		bool enabled_	  = true;
+		std::atomic_bool enabled_	  = true;
 		bool autoExecute_ = false;
 
 	  public:

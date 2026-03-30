@@ -1,5 +1,6 @@
 #include "renderDevice.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <thread>
@@ -9,7 +10,7 @@ using namespace renderApi::device;
 
 gpuLoopThreadResult renderApi::device::gpuThreadLoop(GPU& gpu) {
 	while (gpu.running) {
-		bool anyTaskExecuted = false;
+		std::vector<renderApi::gpuTask::GpuTask*> tasksToWait;
 
 		{
 			std::lock_guard<std::mutex> lock(gpu.GpuTasksMutex);
@@ -17,12 +18,16 @@ gpuLoopThreadResult renderApi::device::gpuThreadLoop(GPU& gpu) {
 			for (auto* task : gpu.GpuTasks) {
 				if (task && task->isBuilt() && task->isEnabled() && task->isAutoExecute()) {
 					task->execute();
-					anyTaskExecuted = true;
+					tasksToWait.push_back(task);
 				}
 			}
 		}
 
-		if (!anyTaskExecuted) {
+		if (!tasksToWait.empty()) {
+			for (auto* task : tasksToWait) {
+				task->wait();
+			}
+		} else {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 	}
