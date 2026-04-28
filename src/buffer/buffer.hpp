@@ -3,6 +3,7 @@
 
 #include "renderDevice.hpp"
 
+#include <cstdint>
 #include <cstring>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -63,21 +64,20 @@ namespace renderApi {
 		VkMemoryPropertyFlags getMemoryFlags() const;
 	};
 
-	template <typename VertexType> Buffer createVertexBuffer(device::GPU* gpu, const std::vector<VertexType>& vertices) {
+	template <typename VertexType> Buffer createVertexBuffer(device::GPU* gpu, uint32_t	size) {
 		Buffer buffer;
-		if (!buffer.create(gpu, vertices.size() * sizeof(VertexType), BufferType::VERTEX, BufferUsage::STATIC)) {
+		if (!buffer.create(gpu, size * sizeof(VertexType), BufferType::VERTEX, BufferUsage::STATIC)) {
 			return Buffer();
 		}
-		buffer.upload(vertices.data(), vertices.size() * sizeof(VertexType));
 		return buffer;
 	}
 
-	template <typename IndexType> Buffer createIndexBuffer(device::GPU* gpu, const std::vector<IndexType>& indices) {
+	template <typename IndexType> Buffer createIndexBuffer(device::GPU* gpu, uint32_t	size) {
 		Buffer buffer;
-		if (!buffer.create(gpu, indices.size() * sizeof(IndexType), BufferType::INDEX, BufferUsage::STATIC)) {
+		if (!buffer.create(gpu, size * sizeof(IndexType), BufferType::INDEX, BufferUsage::STATIC)) {
 			return Buffer();
 		}
-		buffer.upload(indices.data(), indices.size() * sizeof(IndexType));
+
 		return buffer;
 	}
 
