@@ -4,7 +4,6 @@
 
 #include <X11/Xlib.h>
 #include <cstdint>
-#include <cstring>
 #include <exception>
 #include <functional>
 #include <future>
@@ -88,15 +87,52 @@ QueueFamilies RenderInstance::findQueueFamilies(VkPhysicalDevice device) {
 
 	for (uint32_t i = 0; i < queueFamilyCount; i++) {
 		if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT && families.graphicsFamily < 0) families.graphicsFamily = i;
-		if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT && families.computeFamily < 0) families.computeFamily = i;
-		if (queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
-			families.transferFamily < 0)
-			families.transferFamily = i;
 	}
 
+	for (uint32_t i = 0; i < queueFamilyCount; i++) {
+		if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT && families.computeFamily < 0) {
+			if (!(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+				families.computeFamily = i;
+				break;
+			}
+		}
+	}
+	if (families.computeFamily < 0) families.computeFamily = families.graphicsFamily;
+
+	for (uint32_t i = 0; i < queueFamilyCount; i++) {
+		if (queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT && families.transferFamily < 0) {
+			if (!(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+				families.transferFamily = i;
+				break;
+			}
+		}
+	}
+	if (families.transferFamily < 0) families.transferFamily = families.computeFamily;
 	if (families.transferFamily < 0) families.transferFamily = families.graphicsFamily;
 
 	return families;
+}
+
+static void printQueueFamilies(VkPhysicalDevice device) {
+	uint32_t queueFamilyCount = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+	std::cout << "Queue Families available: " << queueFamilyCount << std::endl;
+	for (uint32_t i = 0; i < queueFamilyCount; i++) {
+		std::string flags;
+		if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) flags += "GRAPHICS ";
+		if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) flags += "COMPUTE ";
+		if (queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT) flags += "TRANSFER ";
+		if (queueFamilies[i].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) flags += "SPARSE ";
+		if (queueFamilies[i].queueFlags & VK_QUEUE_PROTECTED_BIT) flags += "PROTECTED ";
+		if (queueFamilies[i].queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) flags += "VIDEO_DECODE ";
+		if (queueFamilies[i].queueFlags & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) flags += "VIDEO_ENCODE ";
+		if (queueFamilies[i].queueFlags & VK_QUEUE_OPTICAL_FLOW_BIT_NV) flags += "OPTICAL_FLOW ";
+
+		std::cout << "  Family " << i << ": " << queueFamilies[i].queueCount << " queue(s) - " << flags << std::endl;
+	}
 }
 
 InitDeviceResult RenderInstance::finishDeviceInitialization(GPU& gpu) {
@@ -128,16 +164,16 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		if (gpu->physicalDevice == VK_NULL_HANDLE) return NO_PHYSICAL_DEVICE_FOUND;
 	}
 
+	printQueueFamilies(gpu->physicalDevice);
+
 	auto families	   = findQueueFamilies(gpu->physicalDevice);
 	gpu->queueFamilies = families;
 
-	// Get queue family properties to check available queue count
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(gpu->physicalDevice, &queueFamilyCount, nullptr);
 	std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(gpu->physicalDevice, &queueFamilyCount, queueFamilyProperties.data());
 
-	// Determine queue counts per family (limited by available queues)
 	std::map<int, uint32_t> familyQueueCount;
 	std::map<int, uint32_t> familyQueueOffset;
 	std::map<int, uint32_t> requestedGraphicsCount;
@@ -157,7 +193,17 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		familyQueueCount[families.transferFamily] += config.transfer;
 	}
 
-	// Limit each family to available queues and calculate actual counts
+	// Check if requested queues exceed available queues
+	for (auto& [familyIndex, totalRequested] : familyQueueCount) {
+		uint32_t maxQueues = queueFamilyProperties[familyIndex].queueCount;
+		if (totalRequested > maxQueues) {
+			std::cerr << "GPU Error: Requested " << totalRequested << " queues for family " << familyIndex
+					  << " but only " << maxQueues << " available." << std::endl;
+			std::cerr << "  Reduce your queue request or use a GPU with more queues." << std::endl;
+			return VK_CREATE_DEVICE_FAILED;
+		}
+	}
+
 	std::map<int, uint32_t> actualGraphicsCount;
 	std::map<int, uint32_t> actualComputeCount;
 	std::map<int, uint32_t> actualTransferCount;
@@ -170,29 +216,32 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		}
 		uint32_t actualTotal = std::min(totalRequested, maxQueues);
 
-		// Calculate ratios and distribute actual queues
 		uint32_t graphicsReq = requestedGraphicsCount[familyIndex];
 		uint32_t computeReq	 = requestedComputeCount[familyIndex];
 		uint32_t transferReq = requestedTransferCount[familyIndex];
 		uint32_t totalReq	 = graphicsReq + computeReq + transferReq;
 
 		if (totalReq > 0) {
-			// Proportional distribution, ensuring at least 1 if requested
 			actualGraphicsCount[familyIndex] = graphicsReq > 0 ? std::max(1u, (graphicsReq * actualTotal) / totalReq) : 0;
 			actualComputeCount[familyIndex]	 = computeReq > 0 ? std::max(1u, (computeReq * actualTotal) / totalReq) : 0;
 			actualTransferCount[familyIndex] = transferReq > 0 ? std::max(1u, (transferReq * actualTotal) / totalReq) : 0;
 
-			// Adjust if we exceeded the total due to rounding
 			uint32_t sum = actualGraphicsCount[familyIndex] + actualComputeCount[familyIndex] + actualTransferCount[familyIndex];
 			if (sum > actualTotal) {
-				// Reduce the largest one
-				if (actualGraphicsCount[familyIndex] >= actualComputeCount[familyIndex] &&
-					actualGraphicsCount[familyIndex] >= actualTransferCount[familyIndex]) {
-					actualGraphicsCount[familyIndex] -= (sum - actualTotal);
-				} else if (actualComputeCount[familyIndex] >= actualTransferCount[familyIndex]) {
-					actualComputeCount[familyIndex] -= (sum - actualTotal);
-				} else {
-					actualTransferCount[familyIndex] -= (sum - actualTotal);
+				uint32_t excess = sum - actualTotal;
+				// Reduce transfer first, then compute, keep graphics as priority
+				uint32_t removeFromTransfer = std::min(excess, actualTransferCount[familyIndex]);
+				actualTransferCount[familyIndex] -= removeFromTransfer;
+				excess -= removeFromTransfer;
+
+				if (excess > 0) {
+					uint32_t removeFromCompute = std::min(excess, actualComputeCount[familyIndex]);
+					actualComputeCount[familyIndex] -= removeFromCompute;
+					excess -= removeFromCompute;
+				}
+
+				if (excess > 0) {
+					actualGraphicsCount[familyIndex] -= std::min(excess, actualGraphicsCount[familyIndex]);
 				}
 			}
 		}

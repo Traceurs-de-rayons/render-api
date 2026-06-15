@@ -21,7 +21,16 @@ endif()
 
 # Configure Vulkan
 set(VULKAN_INCLUDE_DIR "${VULKAN_ARCH_PATH}/include")
-set(VULKAN_LIBRARY "${VULKAN_ARCH_PATH}/lib/libvulkan.so")
+
+# Find Vulkan library, fallback to system paths if not in SDK
+if(EXISTS "${VULKAN_ARCH_PATH}/lib/libvulkan.so")
+	set(VULKAN_LIBRARY "${VULKAN_ARCH_PATH}/lib/libvulkan.so")
+else()
+	find_library(VULKAN_LIBRARY vulkan PATHS /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib)
+	if(NOT VULKAN_LIBRARY)
+		message(FATAL_ERROR "libvulkan.so not found in SDK or system paths")
+	endif()
+endif()
 
 if(NOT EXISTS ${VULKAN_INCLUDE_DIR}/vulkan/vulkan.h)
 	message(FATAL_ERROR "Vulkan SDK not found at: ${VULKAN_SDK_PATH}")
