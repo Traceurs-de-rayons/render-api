@@ -5,6 +5,7 @@
 #include "graphicsPipeline.hpp"
 #include "pipeline/pipelineBuild.cpp"
 #include "pipeline/swapchain.cpp"
+#include "utils/extMeshShaderCompat.hpp"
 
 #include <SDL2/SDL_vulkan.h>
 #include <algorithm>

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -11,7 +12,7 @@
 namespace renderApi {
 	class Buffer;
 	enum class BufferType;
-} // namespace renderApi
+} 
 
 namespace renderApi::device {
 	struct GPU;
@@ -80,6 +81,9 @@ namespace renderApi::gpuTask {
 		uint32_t			 vertexOffset_	= 0;
 		uint32_t			 firstInstance_ = 0;
 
+		Buffer*				 indirectBuffer_	= nullptr;
+		uint32_t			 indirectDrawCount_	= 0;
+
 		uint32_t meshTaskCountX_ = 0;
 		uint32_t meshTaskCountY_ = 0;
 		uint32_t meshTaskCountZ_ = 0;
@@ -99,6 +103,20 @@ namespace renderApi::gpuTask {
 		std::atomic_bool enabled_	  = true;
 		bool autoExecute_ = false;
 
+		std::mutex executionMutex_;
+
+		// Steps of execute()
+		bool acquireFrame(bool usesSwapchain, uint32_t& imageIndex);
+		void recordCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain);
+		bool submitFrame(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain);
+
+		void recordGraphicsInline(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain);
+		void recordGraphicsSecondary(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain);
+		void recordPipelineSecondary(VkCommandBuffer secondaryBuffer, GraphicsPipeline* pipeline);
+		void recordCompute(VkCommandBuffer commandBuffer);
+		void beginGraphicsRenderPass(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain, VkSubpassContents contents);
+		void drawMeshTasks(VkCommandBuffer commandBuffer);
+
 	  public:
 		GpuTask(const std::string& name, device::GPU* gpu);
 		~GpuTask();
@@ -112,6 +130,7 @@ namespace renderApi::gpuTask {
 		void setDrawParams(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 		void setIndexedDrawParams(
 				uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t firstInstance = 0);
+		void setIndirectDrawBuffer(Buffer* buffer, uint32_t drawCount);
 		void setMeshTaskCount(uint32_t x, uint32_t y = 1, uint32_t z = 1);
 		void removeBuffer(Buffer* buffer);
 		void clearBuffers();
@@ -152,6 +171,7 @@ namespace renderApi::gpuTask {
 
 		void execute();
 		void wait();
+		void pause();
 
 		bool				  isBuilt() const { return isBuilt_; }
 		VkDescriptorSet		  getDescriptorSet() const { return descriptorSet_; }
@@ -170,6 +190,6 @@ namespace renderApi::gpuTask {
 		void unregisterFromGPU();
 	};
 
-} // namespace renderApi::gpuTask
+} 
 
 #endif

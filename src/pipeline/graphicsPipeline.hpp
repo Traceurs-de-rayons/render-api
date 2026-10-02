@@ -95,6 +95,12 @@ namespace renderApi::gpuTask {
 		VkPresentModeKHR preferredPresentMode_ = VK_PRESENT_MODE_IMMEDIATE_KHR;
 		uint32_t		 requestedImageCount_  = 0;
 
+		// Optional overrides applied by GpuTask::build
+		std::optional<uint32_t> descriptorSetIndex_; // use this descriptor manager set instead of set 0
+		uint32_t				fixedWidth_	 = 0;	 // 0 = task render size
+		uint32_t				fixedHeight_ = 0;
+		bool					dynamicViewport_ = false; // viewport/scissor set with vkCmdSet* while recording
+
 		bool createDepthResources();
 		void destroyDepthResources();
 		bool createSwapchainFramebuffers();
@@ -140,6 +146,22 @@ namespace renderApi::gpuTask {
 		void setPresentMode(VkPresentModeKHR mode);
 		void setSwapchainImageCount(uint32_t count);
 
+		// Build this pipeline against the given descriptor manager set (default: first set)
+		void setDescriptorSetIndex(uint32_t setIndex) { descriptorSetIndex_ = setIndex; }
+		// Render at a fixed resolution instead of the task render size (e.g. shadow maps)
+		void setFixedExtent(uint32_t width, uint32_t height) {
+			fixedWidth_	 = width;
+			fixedHeight_ = height;
+		}
+		// Viewport and scissor become dynamic state (e.g. to render several views into an atlas)
+		void setDynamicViewport(bool dynamic) { dynamicViewport_ = dynamic; }
+		// Hardware depth bias (shadow maps); zero factors disable it
+		void setDepthBias(float constantFactor, float slopeFactor) {
+			rasterizer_.depthBiasEnable			= (constantFactor != 0.0f || slopeFactor != 0.0f) ? VK_TRUE : VK_FALSE;
+			rasterizer_.depthBiasConstantFactor = constantFactor;
+			rasterizer_.depthBiasSlopeFactor	= slopeFactor;
+		}
+
 		bool createSwapchain();
 		bool recreateSwapchain();
 		void destroySwapchain();
@@ -166,6 +188,8 @@ namespace renderApi::gpuTask {
 		VkFramebuffer	   getFramebuffer() const { return framebuffer_; }
 		VkImage			   getColorImage(uint32_t index = 0) const { return index < colorImages_.size() ? colorImages_[index] : VK_NULL_HANDLE; }
 		VkImageView		   getColorImageView(uint32_t index = 0) const { return index < colorImageViews_.size() ? colorImageViews_[index] : VK_NULL_HANDLE; }
+		VkImage			   getDepthImage() const { return depthImage_; }
+		VkImageView		   getDepthImageView() const { return depthImageView_; }
 		VkFormat	 getColorFormat(uint32_t index = 0) const { return index < colorFormats_.size() ? colorFormats_[index] : VK_FORMAT_UNDEFINED; }
 		uint32_t	 getColorAttachmentCount() const { return colorAttachmentCount_; }
 		uint32_t	 getWidth() const { return width_; }

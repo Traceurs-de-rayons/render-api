@@ -14,6 +14,10 @@
 
 using namespace renderApi::descriptor;
 
+namespace {
+	constexpr uint32_t MAX_BINDLESS_TEXTURES = 128;
+}
+
 DescriptorSet::DescriptorSet()
 	: gpu_(nullptr), descriptorSet_(VK_NULL_HANDLE), layout_(VK_NULL_HANDLE) {}
 
@@ -98,6 +102,17 @@ void DescriptorSet::addSampler(uint32_t binding, renderApi::Sampler* sampler, Vk
 	bindings_.push_back(desc);
 }
 
+void DescriptorSet::addImageView(uint32_t binding, VkImageView imageView, VkSampler sampler, VkShaderStageFlags stages) {
+	DescriptorBinding desc{};
+	desc.binding = binding;
+	desc.type = DescriptorType::COMBINED_IMAGE_SAMPLER;
+	desc.count = 1;
+	desc.stageFlags = stages;
+	desc.imageView = imageView;
+	desc.imageSampler = sampler;
+	bindings_.push_back(desc);
+}
+
 VkDescriptorType DescriptorSet::convertDescriptorType(DescriptorType type) const {
 	switch (type) {
 	case DescriptorType::UNIFORM_BUFFER:
@@ -131,19 +146,26 @@ bool DescriptorSet::build(renderApi::device::GPU* gpu, VkDescriptorPool pool) {
 	std::vector<VkDescriptorBindingFlags> bindingFlags;
 	bindingFlags.reserve(bindings_.size());
 
+	bool needsUpdateAfterBind = false;
+
 	for (const auto& binding : bindings_) {
 		VkDescriptorSetLayoutBinding layoutBinding{};
 		layoutBinding.binding = binding.binding;
 		layoutBinding.descriptorType = convertDescriptorType(binding.type);
-		layoutBinding.descriptorCount = binding.count;
+		if (!binding.textureArray.empty()) {
+			layoutBinding.descriptorCount = MAX_BINDLESS_TEXTURES;
+		} else {
+			layoutBinding.descriptorCount = binding.count;
+		}
 		layoutBinding.stageFlags = binding.stageFlags;
 		layoutBinding.pImmutableSamplers = nullptr;
 		layoutBindings.push_back(layoutBinding);
 
-		// Enable partially bound flag for texture arrays (bindless)
+		// Enable partially bound / update-after-bind flags for bindless texture arrays
 		VkDescriptorBindingFlags flags = 0;
-		if (!binding.textureArray.empty() && binding.count > 1) {
+		if (!binding.textureArray.empty()) {
 			flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+			needsUpdateAfterBind = true;
 		}
 		bindingFlags.push_back(flags);
 	}
@@ -155,8 +177,10 @@ bool DescriptorSet::build(renderApi::device::GPU* gpu, VkDescriptorPool pool) {
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.pNext = &bindingFlagsInfo;
-	layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+	if (needsUpdateAfterBind) {
+		layoutInfo.pNext = &bindingFlagsInfo;
+		layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+	}
 	layoutInfo.bindingCount = static_cast<uint32_t>(layoutBindings.size());
 	layoutInfo.pBindings = layoutBindings.data();
 
@@ -190,10 +214,6 @@ void DescriptorSet::update() {
 		return;
 	}
 
-	std::cout << "=== DescriptorSet::update() called ===" << std::endl;
-	std::cout << "  DescriptorSet handle: " << descriptorSet_ << std::endl;
-	std::cout << "  Number of bindings: " << bindings_.size() << std::endl;
-
 	std::vector<VkWriteDescriptorSet> writes;
 	std::vector<VkDescriptorBufferInfo> bufferInfos;
 	std::vector<VkDescriptorImageInfo> imageInfos;
@@ -203,8 +223,6 @@ void DescriptorSet::update() {
 	imageInfos.reserve(bindings_.size());
 
 	for (const auto& binding : bindings_) {
-		std::cout << "  Processing binding " << binding.binding << " (type=" << static_cast<int>(binding.type)
-		          << ", count=" << binding.count << ")" << std::endl;
 		VkWriteDescriptorSet write{};
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		write.dstSet = descriptorSet_;
@@ -213,6 +231,8 @@ void DescriptorSet::update() {
 		write.descriptorType = convertDescriptorType(binding.type);
 		write.descriptorCount = binding.count;
 
+		bool hasResource = false;
+
 		if (binding.buffer) {
 			VkDescriptorBufferInfo bufferInfo{};
 			bufferInfo.buffer = binding.buffer->getHandle();
@@ -220,8 +240,8 @@ void DescriptorSet::update() {
 			bufferInfo.range = binding.buffer->getSize();
 			bufferInfos.push_back(bufferInfo);
 			write.pBufferInfo = &bufferInfos.back();
+			hasResource = true;
 		} else if (!binding.textureArray.empty()) {
-			std::cout << "    Texture array with " << binding.textureArray.size() << " textures:" << std::endl;
 			size_t startIdx = imageInfos.size();
 			for (size_t i = 0; i < binding.textureArray.size(); ++i) {
 				auto* tex = binding.textureArray[i];
@@ -229,12 +249,10 @@ void DescriptorSet::update() {
 				imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 				imageInfo.imageView = tex->getImageView();
 				imageInfo.sampler = tex->getSamplerHandle();
-				std::cout << "      [" << i << "] imageView=" << imageInfo.imageView
-				          << " sampler=" << imageInfo.sampler
-				          << " isValid=" << (tex->isValid() ? "yes" : "NO") << std::endl;
 				imageInfos.push_back(imageInfo);
 			}
 			write.pImageInfo = &imageInfos[startIdx];
+			hasResource = true;
 		} else if (binding.texture) {
 			VkDescriptorImageInfo imageInfo{};
 			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -242,6 +260,7 @@ void DescriptorSet::update() {
 			imageInfo.sampler = binding.texture->getSamplerHandle();
 			imageInfos.push_back(imageInfo);
 			write.pImageInfo = &imageInfos.back();
+			hasResource = true;
 		} else if (binding.image) {
 			VkDescriptorImageInfo imageInfo{};
 			if (binding.type == DescriptorType::STORAGE_IMAGE) {
@@ -253,6 +272,15 @@ void DescriptorSet::update() {
 			imageInfo.sampler = VK_NULL_HANDLE;
 			imageInfos.push_back(imageInfo);
 			write.pImageInfo = &imageInfos.back();
+			hasResource = true;
+		} else if (binding.imageView != VK_NULL_HANDLE) {
+			VkDescriptorImageInfo imageInfo{};
+			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfo.imageView = binding.imageView;
+			imageInfo.sampler = binding.imageSampler;
+			imageInfos.push_back(imageInfo);
+			write.pImageInfo = &imageInfos.back();
+			hasResource = true;
 		} else if (binding.sampler) {
 			VkDescriptorImageInfo imageInfo{};
 			imageInfo.sampler = binding.sampler->getHandle();
@@ -260,15 +288,30 @@ void DescriptorSet::update() {
 			imageInfo.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			imageInfos.push_back(imageInfo);
 			write.pImageInfo = &imageInfos.back();
+			hasResource = true;
 		}
 
-		writes.push_back(write);
+		if (hasResource)
+			writes.push_back(write);
 	}
 
-	std::cout << "  Calling vkUpdateDescriptorSets with " << writes.size() << " writes" << std::endl;
 	vkUpdateDescriptorSets(gpu_->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-	std::cout << "  vkUpdateDescriptorSets completed successfully" << std::endl;
-	std::cout << "=======================================" << std::endl;
+}
+
+void DescriptorSet::updateImageView(uint32_t binding, VkImageView imageView, VkSampler sampler) {
+	bool found = false;
+	for (auto& b : bindings_) {
+		if (b.binding == binding && b.buffer == nullptr && b.texture == nullptr && b.image == nullptr && b.sampler == nullptr && b.textureArray.empty()) {
+			b.imageView = imageView;
+			b.imageSampler = sampler;
+			found = true;
+		}
+	}
+	if (!found) {
+		std::cerr << "DescriptorSet::updateImageView: binding " << binding << " not found or not an image view binding" << std::endl;
+		return;
+	}
+	update();
 }
 
 void DescriptorSet::destroy() {
@@ -351,11 +394,15 @@ bool DescriptorSetManager::createPool() {
 		return false;
 	}
 
-	// Count descriptor types
+	// Count descriptor types and detect update-after-bind usage
 	std::map<VkDescriptorType, uint32_t> typeCounts;
+	bool needsUpdateAfterBind = false;
 
 	for (const auto& set : sets_) {
 		for (const auto& binding : set.getBindings()) {
+			if (!binding.textureArray.empty()) {
+				needsUpdateAfterBind = true;
+			}
 			VkDescriptorType vkType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			switch (binding.type) {
 			case DescriptorType::UNIFORM_BUFFER:
@@ -377,7 +424,11 @@ bool DescriptorSetManager::createPool() {
 				vkType = VK_DESCRIPTOR_TYPE_SAMPLER;
 				break;
 			}
-			typeCounts[vkType] += binding.count;
+			if (!binding.textureArray.empty()) {
+				typeCounts[vkType] += MAX_BINDLESS_TEXTURES;
+			} else {
+				typeCounts[vkType] += binding.count;
+			}
 		}
 	}
 
@@ -402,7 +453,10 @@ bool DescriptorSetManager::createPool() {
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
 	poolInfo.maxSets = static_cast<uint32_t>(sets_.size());
-	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+	poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+	if (needsUpdateAfterBind) {
+		poolInfo.flags |= VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+	}
 
 	if (vkCreateDescriptorPool(gpu_->device, &poolInfo, nullptr, &pool_) != VK_SUCCESS) {
 		std::cerr << "Failed to create descriptor pool" << std::endl;

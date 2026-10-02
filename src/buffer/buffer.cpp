@@ -66,6 +66,9 @@ VkBufferUsageFlags Buffer::getVkUsageFlags() const {
 	case BufferType::STAGING:
 		flags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 		break;
+	case BufferType::INDIRECT:
+		flags = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		break;
 	case BufferType::TRANSFER_SRC:
 		flags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		break;
@@ -126,13 +129,13 @@ bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage 
 	VkMemoryRequirements memRequirements;
 	vkGetBufferMemoryRequirements(vkDevice, buffer_, &memRequirements);
 
-	// Allocate memory
+	
 	VkMemoryAllocateInfo allocInfo{};
 	allocInfo.sType			  = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize  = memRequirements.size;
 	allocInfo.memoryTypeIndex = device::findMemoryType(gpu->physicalDevice, memRequirements.memoryTypeBits, getMemoryFlags());
 
-	// Add device address allocation flag if needed
+	
 	VkMemoryAllocateFlagsInfo flagsInfo{};
 	if (getVkUsageFlags() & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 		flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;

@@ -21,13 +21,15 @@ gpuLoopThreadResult renderApi::device::gpuThreadLoop(GPU& gpu) {
 					tasksToWait.push_back(task);
 				}
 			}
+
+			if (!tasksToWait.empty()) {
+				for (auto* task : tasksToWait) {
+					task->wait();
+				}
+			}
 		}
 
-		if (!tasksToWait.empty()) {
-			for (auto* task : tasksToWait) {
-				task->wait();
-			}
-		} else {
+		if (tasksToWait.empty()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 	}

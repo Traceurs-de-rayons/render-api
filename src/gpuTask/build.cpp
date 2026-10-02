@@ -191,7 +191,20 @@ bool GpuTask::build(uint32_t renderWidth, uint32_t renderHeight) {
 			return false;
 		}
 		for (auto& pipeline : graphicsPipelines_) {
-			if (!pipeline->build(layout, renderWidth, renderHeight)) {
+			VkDescriptorSetLayout pipelineLayout = layout;
+			if (pipeline->descriptorSetIndex_ && useDescriptorManager_ && descriptorManager_) {
+				auto* set = descriptorManager_->getSet(*pipeline->descriptorSetIndex_);
+				if (!set) {
+					std::cerr << "Graphics pipeline " << pipeline->getName() << " references missing descriptor set "
+							  << *pipeline->descriptorSetIndex_ << std::endl;
+					destroy();
+					return false;
+				}
+				pipelineLayout = set->getLayout();
+			}
+			const uint32_t width  = pipeline->fixedWidth_ ? pipeline->fixedWidth_ : renderWidth;
+			const uint32_t height = pipeline->fixedHeight_ ? pipeline->fixedHeight_ : renderHeight;
+			if (!pipeline->build(pipelineLayout, width, height)) {
 				std::cerr << "Failed to build graphics pipeline: " << pipeline->getName() << std::endl;
 				destroy();
 				return false;

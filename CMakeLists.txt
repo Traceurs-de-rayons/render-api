@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find Vulkan SDK
+# Find Vulkan SDK: prefer $VULKAN_SDK env, else the SDK installed by project-helper.sh
 if(DEFINED ENV{VULKAN_SDK})
 	set(VULKAN_SDK_PATH "$ENV{VULKAN_SDK}")
 	# Check if path already includes x86_64
@@ -15,8 +15,11 @@ if(DEFINED ENV{VULKAN_SDK})
 	else()
 		set(VULKAN_ARCH_PATH "${VULKAN_SDK_PATH}/x86_64")
 	endif()
+elseif(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/goinfre/vulkan/current/include/vulkan/vulkan.h")
+	set(VULKAN_SDK_PATH "$ENV{HOME}/goinfre/vulkan/current")
+	set(VULKAN_ARCH_PATH "${VULKAN_SDK_PATH}")
 else()
-	message(FATAL_ERROR "VULKAN_SDK environment variable not set")
+	message(FATAL_ERROR "Vulkan SDK not found. Set VULKAN_SDK or install it with: project-helper.sh install-sdk")
 endif()
 
 # Configure Vulkan
@@ -37,11 +40,13 @@ if(NOT EXISTS ${VULKAN_INCLUDE_DIR}/vulkan/vulkan.h)
 endif()
 
 # Create Vulkan target
-add_library(Vulkan::Vulkan SHARED IMPORTED)
-set_target_properties(Vulkan::Vulkan PROPERTIES
-	IMPORTED_LOCATION "${VULKAN_LIBRARY}"
-	INTERFACE_INCLUDE_DIRECTORIES "${VULKAN_INCLUDE_DIR}"
-)
+if(NOT TARGET Vulkan::Vulkan)
+	add_library(Vulkan::Vulkan SHARED IMPORTED)
+	set_target_properties(Vulkan::Vulkan PROPERTIES
+		IMPORTED_LOCATION "${VULKAN_LIBRARY}"
+		INTERFACE_INCLUDE_DIRECTORIES "${VULKAN_INCLUDE_DIR}"
+	)
+endif()
 
 # Find SDL2
 find_package(SDL2 REQUIRED)

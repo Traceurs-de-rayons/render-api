@@ -76,7 +76,8 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 	depthAttachment.format		   = depthFormat_;
 	depthAttachment.samples		   = multisampling_.rasterizationSamples;
 	depthAttachment.loadOp		   = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depthAttachment.storeOp		   = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	// Stored so the depth image can be sampled by later passes (shadow maps, depth-based effects)
+	depthAttachment.storeOp		   = VK_ATTACHMENT_STORE_OP_STORE;
 	depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -186,7 +187,7 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 	depthImageInfo.format		 = depthFormat_;
 	depthImageInfo.tiling		 = VK_IMAGE_TILING_OPTIMAL;
 	depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depthImageInfo.usage		 = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	depthImageInfo.usage		 = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	depthImageInfo.samples		 = multisampling_.rasterizationSamples;
 	depthImageInfo.sharingMode	 = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -293,10 +294,23 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 	pipelineInfo.pMultisampleState	 = &multisampling_;
 	pipelineInfo.pDepthStencilState	 = &depthStencil_;
 	pipelineInfo.pColorBlendState	 = &colorBlending_;
+
+	const VkDynamicState			 dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+	VkPipelineDynamicStateCreateInfo dynamicState{};
+	dynamicState.sType			   = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamicState.dynamicStateCount = 2;
+	dynamicState.pDynamicStates	   = dynamicStates;
+	pipelineInfo.pDynamicState	   = dynamicViewport_ ? &dynamicState : nullptr;
+
 	pipelineInfo.layout				 = pipelineLayout_;
 	pipelineInfo.renderPass			 = renderPass_;
 	pipelineInfo.subpass			 = 0;
 	pipelineInfo.basePipelineHandle	 = VK_NULL_HANDLE;
+
+	std::cout << "GraphicsPipeline: Creating pipeline (stages=" << pipelineInfo.stageCount
+			  << ", descriptorSetLayout=" << (void*)descriptorSetLayout
+			  << ", vertexAttribs=" << vertexInputInfo_.vertexAttributeDescriptionCount
+			  << ")" << std::endl;
 
 	if (vkCreateGraphicsPipelines(gpu_->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS) {
 		std::cerr << "GraphicsPipeline: Failed to create graphics pipeline" << std::endl;

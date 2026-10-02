@@ -1,6 +1,7 @@
 #include "renderInstance.hpp"
 
 #include "renderDevice.hpp"
+#include "utils/extMeshShaderCompat.hpp"
 
 #include <X11/Xlib.h>
 #include <cstdint>
@@ -193,7 +194,7 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		familyQueueCount[families.transferFamily] += config.transfer;
 	}
 
-	// Check if requested queues exceed available queues
+	
 	for (auto& [familyIndex, totalRequested] : familyQueueCount) {
 		uint32_t maxQueues = queueFamilyProperties[familyIndex].queueCount;
 		if (totalRequested > maxQueues) {
@@ -229,7 +230,7 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 			uint32_t sum = actualGraphicsCount[familyIndex] + actualComputeCount[familyIndex] + actualTransferCount[familyIndex];
 			if (sum > actualTotal) {
 				uint32_t excess = sum - actualTotal;
-				// Reduce transfer first, then compute, keep graphics as priority
+				
 				uint32_t removeFromTransfer = std::min(excess, actualTransferCount[familyIndex]);
 				actualTransferCount[familyIndex] -= removeFromTransfer;
 				excess -= removeFromTransfer;
@@ -273,6 +274,10 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 	vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
 	vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
+	VkPhysicalDeviceVulkan11Features vulkan11Features{};
+	vulkan11Features.sType		  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+	vulkan11Features.shaderDrawParameters = VK_TRUE;
+
 	VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
 	meshShaderFeatures.sType	  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
 	meshShaderFeatures.meshShader = VK_FALSE;
@@ -295,12 +300,14 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		}
 	}
 
+	vulkan11Features.pNext = &vulkan12Features;
 	vulkan12Features.pNext = &meshShaderFeatures;
 
 	VkPhysicalDeviceFeatures  deviceFeatures{};
+	deviceFeatures.multiDrawIndirect = VK_TRUE;
 	VkPhysicalDeviceFeatures2 deviceFeatures2{};
 	deviceFeatures2.sType	 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	deviceFeatures2.pNext	 = &vulkan12Features;
+	deviceFeatures2.pNext	 = &vulkan11Features;
 	deviceFeatures2.features = deviceFeatures;
 
 	VkDeviceCreateInfo deviceCreateInfo{};
@@ -308,7 +315,7 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 	deviceCreateInfo.pNext					 = &deviceFeatures2;
 	deviceCreateInfo.queueCreateInfoCount	 = static_cast<uint32_t>(queueCreateInfos.size());
 	deviceCreateInfo.pQueueCreateInfos		 = queueCreateInfos.data();
-	deviceCreateInfo.pEnabledFeatures		 = nullptr; // Using pNext chain instead
+	deviceCreateInfo.pEnabledFeatures		 = nullptr; 
 	deviceCreateInfo.enabledExtensionCount	 = static_cast<uint32_t>(deviceExtensions.size());
 	deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.empty() ? nullptr : deviceExtensions.data();
 

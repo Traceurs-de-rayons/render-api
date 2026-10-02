@@ -73,6 +73,11 @@ void GpuTask::setIndexedDrawParams(uint32_t indexCount, uint32_t instanceCount, 
 	firstInstance_ = firstInstance;
 }
 
+void GpuTask::setIndirectDrawBuffer(Buffer* buffer, uint32_t drawCount) {
+	indirectBuffer_	  = buffer;
+	indirectDrawCount_ = drawCount;
+}
+
 void GpuTask::setMeshTaskCount(uint32_t x, uint32_t y, uint32_t z) {
 	meshTaskCountX_ = x;
 	meshTaskCountY_ = y;
@@ -185,6 +190,12 @@ void GpuTask::wait() {
 	if (gpu_ && gpu_->device && fence_ != VK_NULL_HANDLE) {
 		vkWaitForFences(gpu_->device, 1, &fence_, VK_TRUE, UINT64_MAX);
 	}
+}
+
+void GpuTask::pause() {
+	setEnabled(false);
+	wait();
+	std::lock_guard<std::mutex> lock(executionMutex_);
 }
 
 void GpuTask::registerWithGPU() {

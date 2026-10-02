@@ -10,7 +10,7 @@
 
 namespace renderApi {
 
-	enum class BufferType { VERTEX, INDEX, UNIFORM, STORAGE, STAGING, TRANSFER_SRC, TRANSFER_DST };
+	enum class BufferType { VERTEX, INDEX, UNIFORM, STORAGE, STAGING, TRANSFER_SRC, TRANSFER_DST, INDIRECT };
 
 	enum class BufferUsage { STATIC, DYNAMIC, STREAM };
 
@@ -108,6 +108,12 @@ namespace renderApi {
 		return buffer;
 	}
 
-} // namespace renderApi
+	inline Buffer createIndirectBuffer(device::GPU* gpu, size_t size) {
+		Buffer buffer;
+		buffer.create(gpu, size, BufferType::INDIRECT, BufferUsage::STATIC);
+		return buffer;
+	}
+
+} 
 
 #endif
