@@ -104,6 +104,8 @@ namespace renderApi::gpuTask {
 		bool createDepthResources();
 		void destroyDepthResources();
 		bool createSwapchainFramebuffers();
+		bool createAttachments(uint32_t width, uint32_t height);
+		void destroyAttachments();
 
 		friend class GpuTask;
 
@@ -161,6 +163,9 @@ namespace renderApi::gpuTask {
 			rasterizer_.depthBiasConstantFactor = constantFactor;
 			rasterizer_.depthBiasSlopeFactor	= slopeFactor;
 		}
+
+		// Offscreen targets with a dynamic viewport only: new attachments, same pipeline
+		bool resize(uint32_t width, uint32_t height);
 
 		bool createSwapchain();
 		bool recreateSwapchain();

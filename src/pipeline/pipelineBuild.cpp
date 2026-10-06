@@ -119,6 +119,117 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 		return false;
 	}
 
+	if (!createAttachments(width, height))
+		return false;
+
+	if (!vertexAttributes_.empty() || !vertexBindings_.empty()) {
+		vertexInputInfo_.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributes_.size());
+		vertexInputInfo_.pVertexAttributeDescriptions	 = vertexAttributes_.data();
+		vertexInputInfo_.vertexBindingDescriptionCount	 = static_cast<uint32_t>(vertexBindings_.size());
+		vertexInputInfo_.pVertexBindingDescriptions		 = vertexBindings_.data();
+	} else {
+		vertexInputInfo_.vertexAttributeDescriptionCount = 0;
+		vertexInputInfo_.pVertexAttributeDescriptions	 = nullptr;
+		vertexInputInfo_.vertexBindingDescriptionCount	 = 0;
+		vertexInputInfo_.pVertexBindingDescriptions		 = nullptr;
+	}
+
+	std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(colorAttachmentCount_);
+	for (uint32_t i = 0; i < colorAttachmentCount_; ++i) {
+		colorBlendAttachments[i] = colorBlendAttachment_;
+	}
+	colorBlending_.attachmentCount = colorAttachmentCount_;
+	colorBlending_.pAttachments	   = colorBlendAttachments.data();
+
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	if (descriptorSetLayout != VK_NULL_HANDLE) {
+		pipelineLayoutInfo.setLayoutCount = 1;
+		pipelineLayoutInfo.pSetLayouts	  = &descriptorSetLayout;
+	} else {
+		pipelineLayoutInfo.setLayoutCount = 0;
+		pipelineLayoutInfo.pSetLayouts	  = nullptr;
+	}
+	pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges_.size());
+	pipelineLayoutInfo.pPushConstantRanges	  = pushConstantRanges_.empty() ? nullptr : pushConstantRanges_.data();
+
+	if (vkCreatePipelineLayout(gpu_->device, &pipelineLayoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
+		std::cerr << "GraphicsPipeline: Failed to create pipeline layout" << std::endl;
+		return false;
+	}
+
+	VkGraphicsPipelineCreateInfo pipelineInfo{};
+	pipelineInfo.sType		= VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages_.size());
+	pipelineInfo.pStages	= shaderStages_.data();
+
+	pipelineInfo.pVertexInputState	 = &vertexInputInfo_;
+	pipelineInfo.pInputAssemblyState = &inputAssemblyInfo_;
+	pipelineInfo.pViewportState		 = &viewportInfo_;
+	pipelineInfo.pRasterizationState = &rasterizer_;
+	pipelineInfo.pMultisampleState	 = &multisampling_;
+	pipelineInfo.pDepthStencilState	 = &depthStencil_;
+	pipelineInfo.pColorBlendState	 = &colorBlending_;
+
+	const VkDynamicState			 dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+	VkPipelineDynamicStateCreateInfo dynamicState{};
+	dynamicState.sType			   = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamicState.dynamicStateCount = 2;
+	dynamicState.pDynamicStates	   = dynamicStates;
+	pipelineInfo.pDynamicState	   = dynamicViewport_ ? &dynamicState : nullptr;
+
+	pipelineInfo.layout				 = pipelineLayout_;
+	pipelineInfo.renderPass			 = renderPass_;
+	pipelineInfo.subpass			 = 0;
+	pipelineInfo.basePipelineHandle	 = VK_NULL_HANDLE;
+
+	std::cout << "GraphicsPipeline: Creating pipeline (stages=" << pipelineInfo.stageCount
+			  << ", descriptorSetLayout=" << (void*)descriptorSetLayout
+			  << ", vertexAttribs=" << vertexInputInfo_.vertexAttributeDescriptionCount
+			  << ")" << std::endl;
+
+	if (vkCreateGraphicsPipelines(gpu_->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS) {
+		std::cerr << "GraphicsPipeline: Failed to create graphics pipeline" << std::endl;
+		vkDestroyPipelineLayout(gpu_->device, pipelineLayout_, nullptr);
+		pipelineLayout_ = VK_NULL_HANDLE;
+		return false;
+	}
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	if (vkCreateFence(gpu_->device, &fenceInfo, nullptr, &renderFence_) != VK_SUCCESS) {
+		std::cerr << "GraphicsPipeline: Failed to create render fence" << std::endl;
+		return false;
+	}
+
+	if (outputTarget_ == OutputTarget::SDL_SURFACE && surface_ != VK_NULL_HANDLE && swapchainFramebuffers_.empty()) {
+		swapchainFramebuffers_.resize(swapchainImageViews_.size());
+		for (size_t i = 0; i < swapchainImageViews_.size(); i++) {
+			std::vector<VkImageView> attachments = {swapchainImageViews_[i], depthImageView_};
+
+			VkFramebufferCreateInfo fbInfo{};
+			fbInfo.sType		   = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			fbInfo.renderPass	   = renderPass_;
+			fbInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+			fbInfo.pAttachments	   = attachments.data();
+			fbInfo.width		   = width_;
+			fbInfo.height		   = height_;
+			fbInfo.layers		   = 1;
+
+			if (vkCreateFramebuffer(gpu_->device, &fbInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
+				std::cerr << "GraphicsPipeline: Failed to create swapchain framebuffer" << std::endl;
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+// Color and depth images of an offscreen target, and the framebuffer rendering into them.
+bool GraphicsPipeline::createAttachments(uint32_t width, uint32_t height) {
 	colorImages_.resize(colorAttachmentCount_);
 	colorImageViews_.resize(colorAttachmentCount_);
 	colorImageMemories_.resize(colorAttachmentCount_);
@@ -246,140 +357,13 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 		return false;
 	}
 
-	if (!vertexAttributes_.empty() || !vertexBindings_.empty()) {
-		vertexInputInfo_.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributes_.size());
-		vertexInputInfo_.pVertexAttributeDescriptions	 = vertexAttributes_.data();
-		vertexInputInfo_.vertexBindingDescriptionCount	 = static_cast<uint32_t>(vertexBindings_.size());
-		vertexInputInfo_.pVertexBindingDescriptions		 = vertexBindings_.data();
-	} else {
-		vertexInputInfo_.vertexAttributeDescriptionCount = 0;
-		vertexInputInfo_.pVertexAttributeDescriptions	 = nullptr;
-		vertexInputInfo_.vertexBindingDescriptionCount	 = 0;
-		vertexInputInfo_.pVertexBindingDescriptions		 = nullptr;
-	}
-
-	std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments(colorAttachmentCount_);
-	for (uint32_t i = 0; i < colorAttachmentCount_; ++i) {
-		colorBlendAttachments[i] = colorBlendAttachment_;
-	}
-	colorBlending_.attachmentCount = colorAttachmentCount_;
-	colorBlending_.pAttachments	   = colorBlendAttachments.data();
-
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	if (descriptorSetLayout != VK_NULL_HANDLE) {
-		pipelineLayoutInfo.setLayoutCount = 1;
-		pipelineLayoutInfo.pSetLayouts	  = &descriptorSetLayout;
-	} else {
-		pipelineLayoutInfo.setLayoutCount = 0;
-		pipelineLayoutInfo.pSetLayouts	  = nullptr;
-	}
-	pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges_.size());
-	pipelineLayoutInfo.pPushConstantRanges	  = pushConstantRanges_.empty() ? nullptr : pushConstantRanges_.data();
-
-	if (vkCreatePipelineLayout(gpu_->device, &pipelineLayoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
-		std::cerr << "GraphicsPipeline: Failed to create pipeline layout" << std::endl;
-		return false;
-	}
-
-	VkGraphicsPipelineCreateInfo pipelineInfo{};
-	pipelineInfo.sType		= VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages_.size());
-	pipelineInfo.pStages	= shaderStages_.data();
-
-	pipelineInfo.pVertexInputState	 = &vertexInputInfo_;
-	pipelineInfo.pInputAssemblyState = &inputAssemblyInfo_;
-	pipelineInfo.pViewportState		 = &viewportInfo_;
-	pipelineInfo.pRasterizationState = &rasterizer_;
-	pipelineInfo.pMultisampleState	 = &multisampling_;
-	pipelineInfo.pDepthStencilState	 = &depthStencil_;
-	pipelineInfo.pColorBlendState	 = &colorBlending_;
-
-	const VkDynamicState			 dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-	VkPipelineDynamicStateCreateInfo dynamicState{};
-	dynamicState.sType			   = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamicState.dynamicStateCount = 2;
-	dynamicState.pDynamicStates	   = dynamicStates;
-	pipelineInfo.pDynamicState	   = dynamicViewport_ ? &dynamicState : nullptr;
-
-	pipelineInfo.layout				 = pipelineLayout_;
-	pipelineInfo.renderPass			 = renderPass_;
-	pipelineInfo.subpass			 = 0;
-	pipelineInfo.basePipelineHandle	 = VK_NULL_HANDLE;
-
-	std::cout << "GraphicsPipeline: Creating pipeline (stages=" << pipelineInfo.stageCount
-			  << ", descriptorSetLayout=" << (void*)descriptorSetLayout
-			  << ", vertexAttribs=" << vertexInputInfo_.vertexAttributeDescriptionCount
-			  << ")" << std::endl;
-
-	if (vkCreateGraphicsPipelines(gpu_->device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS) {
-		std::cerr << "GraphicsPipeline: Failed to create graphics pipeline" << std::endl;
-		vkDestroyPipelineLayout(gpu_->device, pipelineLayout_, nullptr);
-		pipelineLayout_ = VK_NULL_HANDLE;
-		return false;
-	}
-
-	VkFenceCreateInfo fenceInfo{};
-	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-	if (vkCreateFence(gpu_->device, &fenceInfo, nullptr, &renderFence_) != VK_SUCCESS) {
-		std::cerr << "GraphicsPipeline: Failed to create render fence" << std::endl;
-		return false;
-	}
-
-	if (outputTarget_ == OutputTarget::SDL_SURFACE && surface_ != VK_NULL_HANDLE && swapchainFramebuffers_.empty()) {
-		swapchainFramebuffers_.resize(swapchainImageViews_.size());
-		for (size_t i = 0; i < swapchainImageViews_.size(); i++) {
-			std::vector<VkImageView> attachments = {swapchainImageViews_[i], depthImageView_};
-
-			VkFramebufferCreateInfo fbInfo{};
-			fbInfo.sType		   = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			fbInfo.renderPass	   = renderPass_;
-			fbInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-			fbInfo.pAttachments	   = attachments.data();
-			fbInfo.width		   = width_;
-			fbInfo.height		   = height_;
-			fbInfo.layers		   = 1;
-
-			if (vkCreateFramebuffer(gpu_->device, &fbInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
-				std::cerr << "GraphicsPipeline: Failed to create swapchain framebuffer" << std::endl;
-				return false;
-			}
-		}
-	}
-
 	return true;
 }
 
-void GraphicsPipeline::destroy() {
-	if (!gpu_ || !gpu_->device) {
-		return;
-	}
-
-	if (renderFence_ != VK_NULL_HANDLE) {
-		vkDestroyFence(gpu_->device, renderFence_, nullptr);
-		renderFence_ = VK_NULL_HANDLE;
-	}
-
+void GraphicsPipeline::destroyAttachments() {
 	if (framebuffer_ != VK_NULL_HANDLE) {
 		vkDestroyFramebuffer(gpu_->device, framebuffer_, nullptr);
 		framebuffer_ = VK_NULL_HANDLE;
-	}
-
-	if (renderPass_ != VK_NULL_HANDLE) {
-		vkDestroyRenderPass(gpu_->device, renderPass_, nullptr);
-		renderPass_ = VK_NULL_HANDLE;
-	}
-
-	if (pipeline_ != VK_NULL_HANDLE) {
-		vkDestroyPipeline(gpu_->device, pipeline_, nullptr);
-		pipeline_ = VK_NULL_HANDLE;
-	}
-
-	if (pipelineLayout_ != VK_NULL_HANDLE) {
-		vkDestroyPipelineLayout(gpu_->device, pipelineLayout_, nullptr);
-		pipelineLayout_ = VK_NULL_HANDLE;
 	}
 
 	for (auto imageView : colorImageViews_) {
@@ -416,6 +400,54 @@ void GraphicsPipeline::destroy() {
 	if (depthImageMemory_ != VK_NULL_HANDLE) {
 		vkFreeMemory(gpu_->device, depthImageMemory_, nullptr);
 		depthImageMemory_ = VK_NULL_HANDLE;
+	}
+}
+
+// Recreates the attachments at a new size. The render pass, the layout and the pipeline itself
+// do not depend on the extent when the viewport is dynamic, so they are kept: no shader is
+// recompiled. The caller makes sure the GPU no longer uses the old images.
+bool GraphicsPipeline::resize(uint32_t width, uint32_t height) {
+	if (!gpu_ || !gpu_->device || renderPass_ == VK_NULL_HANDLE || width == 0 || height == 0)
+		return false;
+	if (outputTarget_ != OutputTarget::BUFFER || !dynamicViewport_) {
+		std::cerr << "GraphicsPipeline: resize() needs an offscreen target with a dynamic viewport" << std::endl;
+		return false;
+	}
+	if (width == width_ && height == height_)
+		return true;
+
+	destroyAttachments();
+	width_	= width;
+	height_ = height;
+	setViewport(width, height);
+	return createAttachments(width, height);
+}
+
+void GraphicsPipeline::destroy() {
+	if (!gpu_ || !gpu_->device) {
+		return;
+	}
+
+	if (renderFence_ != VK_NULL_HANDLE) {
+		vkDestroyFence(gpu_->device, renderFence_, nullptr);
+		renderFence_ = VK_NULL_HANDLE;
+	}
+
+	destroyAttachments();
+
+	if (renderPass_ != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(gpu_->device, renderPass_, nullptr);
+		renderPass_ = VK_NULL_HANDLE;
+	}
+
+	if (pipeline_ != VK_NULL_HANDLE) {
+		vkDestroyPipeline(gpu_->device, pipeline_, nullptr);
+		pipeline_ = VK_NULL_HANDLE;
+	}
+
+	if (pipelineLayout_ != VK_NULL_HANDLE) {
+		vkDestroyPipelineLayout(gpu_->device, pipelineLayout_, nullptr);
+		pipelineLayout_ = VK_NULL_HANDLE;
 	}
 
 	destroySwapchain();
