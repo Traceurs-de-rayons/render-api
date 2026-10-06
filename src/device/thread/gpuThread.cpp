@@ -31,6 +31,10 @@ gpuLoopThreadResult renderApi::device::gpuThreadLoop(GPU& gpu) {
 
 		if (tasksToWait.empty()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		} else {
+			// std::mutex is not fair: without this the loop takes the lock back right away and a
+			// thread waiting to resize or rebuild a task can be starved for a long time.
+			std::this_thread::yield();
 		}
 	}
 	return THEARD_LOOP_SUCCESS;
