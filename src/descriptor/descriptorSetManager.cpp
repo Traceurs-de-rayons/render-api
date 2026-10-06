@@ -102,7 +102,7 @@ void DescriptorSet::addSampler(uint32_t binding, renderApi::Sampler* sampler, Vk
 	bindings_.push_back(desc);
 }
 
-void DescriptorSet::addImageView(uint32_t binding, VkImageView imageView, VkSampler sampler, VkShaderStageFlags stages) {
+void DescriptorSet::addImageView(uint32_t binding, VkImageView imageView, VkSampler sampler, VkShaderStageFlags stages, VkImageLayout layout) {
 	DescriptorBinding desc{};
 	desc.binding = binding;
 	desc.type = DescriptorType::COMBINED_IMAGE_SAMPLER;
@@ -110,6 +110,7 @@ void DescriptorSet::addImageView(uint32_t binding, VkImageView imageView, VkSamp
 	desc.stageFlags = stages;
 	desc.imageView = imageView;
 	desc.imageSampler = sampler;
+	desc.imageLayout = layout;
 	bindings_.push_back(desc);
 }
 
@@ -275,7 +276,7 @@ void DescriptorSet::update() {
 			hasResource = true;
 		} else if (binding.imageView != VK_NULL_HANDLE) {
 			VkDescriptorImageInfo imageInfo{};
-			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfo.imageLayout = binding.imageLayout;
 			imageInfo.imageView = binding.imageView;
 			imageInfo.sampler = binding.imageSampler;
 			imageInfos.push_back(imageInfo);

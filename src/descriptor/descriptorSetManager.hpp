@@ -41,6 +41,7 @@ namespace renderApi::descriptor {
 		std::vector<Texture*> textureArray; // For bindless texture arrays
 		VkImageView imageView	 = VK_NULL_HANDLE;
 		VkSampler	 imageSampler = VK_NULL_HANDLE;
+		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // layout of imageView when it is sampled
 	};
 
 	class DescriptorSet {
@@ -59,7 +60,8 @@ namespace renderApi::descriptor {
 		void addTextureArray(uint32_t binding, const std::vector<Texture*>& textures, VkShaderStageFlags stages);
 		void addImage(uint32_t binding, Image* image, DescriptorType type, VkShaderStageFlags stages);
 		void addSampler(uint32_t binding, Sampler* sampler, VkShaderStageFlags stages);
-		void addImageView(uint32_t binding, VkImageView imageView, VkSampler sampler, VkShaderStageFlags stages);
+		void addImageView(uint32_t binding, VkImageView imageView, VkSampler sampler, VkShaderStageFlags stages,
+						  VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 		bool build(device::GPU* gpu, VkDescriptorPool pool);
 		void update();

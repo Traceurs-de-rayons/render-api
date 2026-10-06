@@ -75,12 +75,12 @@ bool GraphicsPipeline::build(VkDescriptorSetLayout descriptorSetLayout, uint32_t
 	VkAttachmentDescription depthAttachment{};
 	depthAttachment.format		   = depthFormat_;
 	depthAttachment.samples		   = multisampling_.rasterizationSamples;
-	depthAttachment.loadOp		   = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depthAttachment.loadOp		   = preserveDepth_ ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 	// Stored so the depth image can be sampled by later passes (shadow maps, depth-based effects)
 	depthAttachment.storeOp		   = VK_ATTACHMENT_STORE_OP_STORE;
 	depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depthAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+	depthAttachment.initialLayout  = preserveDepth_ ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
 	depthAttachment.finalLayout	   = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	std::vector<VkAttachmentDescription> attachments;

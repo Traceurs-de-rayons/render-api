@@ -100,6 +100,7 @@ namespace renderApi::gpuTask {
 		uint32_t				fixedWidth_	 = 0;	 // 0 = task render size
 		uint32_t				fixedHeight_ = 0;
 		bool					dynamicViewport_ = false; // viewport/scissor set with vkCmdSet* while recording
+		bool					preserveDepth_	 = false; // depth attachment loaded instead of cleared
 
 		bool createDepthResources();
 		void destroyDepthResources();
@@ -157,6 +158,9 @@ namespace renderApi::gpuTask {
 		}
 		// Viewport and scissor become dynamic state (e.g. to render several views into an atlas)
 		void setDynamicViewport(bool dynamic) { dynamicViewport_ = dynamic; }
+		// The depth attachment keeps its content between frames (cached shadow maps): the render pass
+		// loads it, so the image must be in DEPTH_STENCIL_ATTACHMENT_OPTIMAL when the pass begins.
+		void setPreserveDepth(bool preserve) { preserveDepth_ = preserve; }
 		// Hardware depth bias (shadow maps); zero factors disable it
 		void setDepthBias(float constantFactor, float slopeFactor) {
 			rasterizer_.depthBiasEnable			= (constantFactor != 0.0f || slopeFactor != 0.0f) ? VK_TRUE : VK_FALSE;
