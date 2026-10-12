@@ -3,7 +3,6 @@
 #include "renderDevice.hpp"
 #include "utils/extMeshShaderCompat.hpp"
 
-#include <X11/Xlib.h>
 #include <cstdint>
 #include <exception>
 #include <functional>
@@ -17,7 +16,6 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
-#include <vulkan/vulkan_xlib.h>
 
 using namespace renderApi::instance;
 using namespace renderApi::device;
@@ -49,15 +47,21 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 	if (!hasSurface)
 		instanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 
-	bool hasXlibSurface = false;
+	// Surface extension of the platform, named directly so no window system header is needed.
+#ifdef _WIN32
+	const char* platformSurface = "VK_KHR_win32_surface";
+#else
+	const char* platformSurface = "VK_KHR_xlib_surface";
+#endif
+	bool hasPlatformSurface = false;
 	for (const auto& ext : instanceExtensions) {
-		if (std::string(ext) == VK_KHR_XLIB_SURFACE_EXTENSION_NAME) {
-			hasXlibSurface = true;
+		if (std::string(ext) == platformSurface) {
+			hasPlatformSurface = true;
 			break;
 		}
 	}
-	if (!hasXlibSurface) {
-		instanceExtensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+	if (!hasPlatformSurface) {
+		instanceExtensions.push_back(platformSurface);
 	}
 
 	createInfo.enabledExtensionCount   = static_cast<uint32_t>(instanceExtensions.size());
