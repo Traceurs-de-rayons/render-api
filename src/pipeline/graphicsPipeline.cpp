@@ -388,8 +388,9 @@ void GraphicsPipeline::setSDLWindow(SDL_Window* window) {
 	window_ = window;
 	if (window_ && gpu_->device) {
 		if (!SDL_Vulkan_CreateSurface(window_, gpu_->instance, &surface_)) {
-			std::cerr << "GraphicsPipeline: Failed to create Vulkan surface from SDL window: " << SDL_GetError() << std::endl;
+			// Nothing can be shown without a surface: stop here rather than crash in the swapchain.
 			surface_ = VK_NULL_HANDLE;
+			throw std::runtime_error(std::string("GraphicsPipeline: Failed to create Vulkan surface from SDL window: ") + SDL_GetError());
 		}
 	}
 }

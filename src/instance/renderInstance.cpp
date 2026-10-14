@@ -47,21 +47,35 @@ RenderInstance::RenderInstance(const Config& config) : instance_(nullptr), confi
 	if (!hasSurface)
 		instanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 
-	// Surface extension of the platform, named directly so no window system header is needed.
 #ifdef _WIN32
-	const char* platformSurface = "VK_KHR_win32_surface";
+	const std::vector<const char*> platformSurfaces = {"VK_KHR_win32_surface"};
 #else
-	const char* platformSurface = "VK_KHR_xlib_surface";
+	const std::vector<const char*> platformSurfaces = {"VK_KHR_xlib_surface", "VK_KHR_xcb_surface", "VK_KHR_wayland_surface"};
 #endif
-	bool hasPlatformSurface = false;
-	for (const auto& ext : instanceExtensions) {
-		if (std::string(ext) == platformSurface) {
-			hasPlatformSurface = true;
-			break;
+	uint32_t availableCount = 0;
+	vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, nullptr);
+	std::vector<VkExtensionProperties> available(availableCount);
+	vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, available.data());
+	available.resize(availableCount);
+
+	for (const char* platformSurface : platformSurfaces) {
+		bool offered = false;
+		for (const auto& ext : available) {
+			if (std::string(ext.extensionName) == platformSurface) {
+				offered = true;
+				break;
+			}
 		}
-	}
-	if (!hasPlatformSurface) {
-		instanceExtensions.push_back(platformSurface);
+		bool requested = false;
+		for (const auto& ext : instanceExtensions) {
+			if (std::string(ext) == platformSurface) {
+				requested = true;
+				break;
+			}
+		}
+		if (offered && !requested) {
+			instanceExtensions.push_back(platformSurface);
+		}
 	}
 
 	createInfo.enabledExtensionCount   = static_cast<uint32_t>(instanceExtensions.size());
@@ -198,7 +212,7 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 		familyQueueCount[families.transferFamily] += config.transfer;
 	}
 
-	
+
 	for (auto& [familyIndex, totalRequested] : familyQueueCount) {
 		uint32_t maxQueues = queueFamilyProperties[familyIndex].queueCount;
 		if (totalRequested > maxQueues) {
@@ -234,7 +248,7 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 			uint32_t sum = actualGraphicsCount[familyIndex] + actualComputeCount[familyIndex] + actualTransferCount[familyIndex];
 			if (sum > actualTotal) {
 				uint32_t excess = sum - actualTotal;
-				
+
 				uint32_t removeFromTransfer = std::min(excess, actualTransferCount[familyIndex]);
 				actualTransferCount[familyIndex] -= removeFromTransfer;
 				excess -= removeFromTransfer;
@@ -319,7 +333,7 @@ InitDeviceResult RenderInstance::addGPU(const device::Config& config) {
 	deviceCreateInfo.pNext					 = &deviceFeatures2;
 	deviceCreateInfo.queueCreateInfoCount	 = static_cast<uint32_t>(queueCreateInfos.size());
 	deviceCreateInfo.pQueueCreateInfos		 = queueCreateInfos.data();
-	deviceCreateInfo.pEnabledFeatures		 = nullptr; 
+	deviceCreateInfo.pEnabledFeatures		 = nullptr;
 	deviceCreateInfo.enabledExtensionCount	 = static_cast<uint32_t>(deviceExtensions.size());
 	deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.empty() ? nullptr : deviceExtensions.data();
 
