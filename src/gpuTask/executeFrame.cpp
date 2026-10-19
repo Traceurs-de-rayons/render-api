@@ -9,8 +9,6 @@
 
 using namespace renderApi::gpuTask;
 
-// Waits for the previous frame and, when presenting, acquires the next swapchain image.
-// Returns false when the frame must be skipped.
 bool GpuTask::acquireFrame(bool usesSwapchain, uint32_t& imageIndex) {
 	if (!usesSwapchain) {
 		vkWaitForFences(gpu_->device, 1, &fence_, VK_TRUE, UINT64_MAX);
@@ -52,8 +50,6 @@ bool GpuTask::acquireFrame(bool usesSwapchain, uint32_t& imageIndex) {
 	return true;
 }
 
-// Submits the command buffer and, when presenting, presents the acquired image.
-// Returns false when the submission failed.
 bool GpuTask::submitFrame(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain) {
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType			  = VK_STRUCTURE_TYPE_SUBMIT_INFO;

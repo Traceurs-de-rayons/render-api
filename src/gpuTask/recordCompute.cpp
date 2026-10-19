@@ -7,7 +7,6 @@
 
 using namespace renderApi::gpuTask;
 
-// Default compute path: dispatches every enabled compute pipeline.
 void GpuTask::recordCompute(VkCommandBuffer commandBuffer) {
 	if (useDescriptorManager_ && descriptorManager_) {
 		auto descriptorSets = descriptorManager_->getDescriptorSets();

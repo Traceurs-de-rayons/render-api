@@ -10,7 +10,7 @@ namespace renderApi {
 	class Texture;
 	class Image;
 	class Sampler;
-} // namespace renderApi
+}
 
 namespace renderApi::device {
 	struct GPU;
@@ -33,15 +33,14 @@ namespace renderApi::descriptor {
 		uint32_t		 count;
 		VkShaderStageFlags stageFlags;
 
-		// Resource pointers (only one should be set based on type)
 		Buffer*  buffer	 = nullptr;
 		Texture* texture = nullptr;
 		Image*	 image	 = nullptr;
 		Sampler* sampler = nullptr;
-		std::vector<Texture*> textureArray; // For bindless texture arrays
+		std::vector<Texture*> textureArray;
 		VkImageView imageView	 = VK_NULL_HANDLE;
 		VkSampler	 imageSampler = VK_NULL_HANDLE;
-		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // layout of imageView when it is sampled
+		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	};
 
 	class DescriptorSet {
@@ -66,8 +65,6 @@ namespace renderApi::descriptor {
 		bool build(device::GPU* gpu, VkDescriptorPool pool);
 		void update();
 		void updateImageView(uint32_t binding, VkImageView imageView, VkSampler sampler);
-		// Replaces the textures of an array binding (at most the size its layout was made with);
-		// update() writes them. Nothing changes for an empty list or another kind of binding.
 		void setTextureArray(uint32_t binding, const std::vector<Texture*>& textures);
 		void destroy();
 
@@ -94,17 +91,14 @@ namespace renderApi::descriptor {
 		DescriptorSetManager(const DescriptorSetManager&)			 = delete;
 		DescriptorSetManager& operator=(const DescriptorSetManager&) = delete;
 
-		// Create and manage descriptor sets
 		DescriptorSet* createSet(uint32_t setIndex = 0);
 		DescriptorSet* getSet(uint32_t setIndex);
 		void		   removeSet(uint32_t setIndex);
 		void		   clearSets();
 
-		// Build all sets and create pool
 		bool build(device::GPU* gpu);
 		void destroy();
 
-		// Get layouts for pipeline creation
 		std::vector<VkDescriptorSetLayout> getLayouts() const;
 		std::vector<VkDescriptorSet>	   getDescriptorSets() const;
 
@@ -120,6 +114,6 @@ namespace renderApi::descriptor {
 		bool createPool();
 	};
 
-} // namespace renderApi::descriptor
+}
 
 #endif

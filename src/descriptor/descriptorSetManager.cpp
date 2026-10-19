@@ -78,7 +78,7 @@ void DescriptorSet::addTextureArray(uint32_t binding, const std::vector<Texture*
 	desc.type = DescriptorType::COMBINED_IMAGE_SAMPLER;
 	desc.count = static_cast<uint32_t>(textures.size());
 	desc.stageFlags = stages;
-	desc.textureArray = textures; // Store array of textures
+	desc.textureArray = textures;
 	bindings_.push_back(desc);
 }
 
@@ -509,12 +509,10 @@ void DescriptorSetManager::destroy() {
 		return;
 	}
 
-	// Destroy all sets first (clears layouts)
 	for (auto& set : sets_) {
 		set.destroy();
 	}
 
-	// Destroy pool (automatically frees all descriptor sets)
 	if (pool_ != VK_NULL_HANDLE) {
 		vkDestroyDescriptorPool(gpu_->device, pool_, nullptr);
 		pool_ = VK_NULL_HANDLE;

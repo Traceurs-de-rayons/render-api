@@ -211,6 +211,6 @@ namespace renderApi {
 		return texture;
 	}
 
-} // namespace renderApi
+}
 
 #endif

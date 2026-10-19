@@ -12,7 +12,7 @@
 namespace renderApi {
 	class Buffer;
 	enum class BufferType;
-} 
+}
 
 namespace renderApi::device {
 	struct GPU;
@@ -105,7 +105,6 @@ namespace renderApi::gpuTask {
 
 		std::mutex executionMutex_;
 
-		// Steps of execute()
 		bool acquireFrame(bool usesSwapchain, uint32_t& imageIndex);
 		void recordCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain);
 		bool submitFrame(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain);
@@ -190,6 +189,6 @@ namespace renderApi::gpuTask {
 		void unregisterFromGPU();
 	};
 
-} 
+}
 
 #endif

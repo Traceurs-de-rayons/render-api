@@ -10,8 +10,6 @@
 
 using namespace renderApi::gpuTask;
 
-// One frame of the task: acquireFrame -> recordCommands -> submitFrame.
-// See executeFrame.cpp, recordGraphics.cpp and recordCompute.cpp.
 void GpuTask::execute() {
 	if (!isBuilt_ || !gpu_ || !gpu_->device) {
 		std::cerr << "GpuTask not built" << std::endl;
@@ -56,8 +54,6 @@ void GpuTask::execute() {
 	currentFrame_ = (currentFrame_ + 1) % maxFramesInFlight_;
 }
 
-// Picks how the frame is recorded: user callbacks, default graphics draw (inline or through
-// secondary command buffers) or compute dispatch.
 void GpuTask::recordCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain) {
 	if (useCustomRecording_ && !recordingCallbacks_.empty()) {
 		for (const auto& callback : recordingCallbacks_) {

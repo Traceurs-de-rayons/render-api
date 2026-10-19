@@ -24,7 +24,6 @@ using namespace renderApi::gpuTask;
 
 static PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT_fn = nullptr;
 
-// Begins the render pass of the first graphics pipeline on its swapchain or offscreen framebuffer.
 void GpuTask::beginGraphicsRenderPass(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain, VkSubpassContents contents) {
 	std::vector<VkClearValue> clearValues(2);
 	clearValues[0].color		= {{0.2f, 0.2f, 0.2f, 1.0f}};
@@ -62,7 +61,6 @@ void GpuTask::drawMeshTasks(VkCommandBuffer commandBuffer) {
 	}
 }
 
-// Default graphics path: every enabled pipeline is drawn inline in one render pass.
 void GpuTask::recordGraphicsInline(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain) {
 	if (useDescriptorManager_ && descriptorManager_) {
 		auto descriptorSets = descriptorManager_->getDescriptorSets();
@@ -124,7 +122,6 @@ void GpuTask::recordGraphicsInline(VkCommandBuffer commandBuffer, uint32_t image
 	vkCmdEndRenderPass(commandBuffer);
 }
 
-// Records one pipeline into its secondary command buffer.
 void GpuTask::recordPipelineSecondary(VkCommandBuffer secondaryBuffer, GraphicsPipeline* pipeline) {
 	if (!pipeline->isEnabled())
 		return;
@@ -161,8 +158,6 @@ void GpuTask::recordPipelineSecondary(VkCommandBuffer secondaryBuffer, GraphicsP
 	}
 }
 
-// Graphics path with secondary command buffers: pipeline N is recorded into the enabled
-// secondary buffer named "pipeline_N", then all of them are executed in one render pass.
 void GpuTask::recordGraphicsSecondary(VkCommandBuffer commandBuffer, uint32_t imageIndex, bool usesSwapchain) {
 	beginGraphicsRenderPass(commandBuffer, imageIndex, usesSwapchain, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 

@@ -3,17 +3,11 @@
 #include "buffer/buffer.hpp"
 #include "renderDevice.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <vulkan/vulkan_core.h>
 
 using namespace renderApi;
-
-// ============================================================================
-// Image Implementation
-// ============================================================================
 
 Image::Image()
 	: gpu_(nullptr), image_(VK_NULL_HANDLE), imageView_(VK_NULL_HANDLE), memory_(VK_NULL_HANDLE), format_(VK_FORMAT_UNDEFINED), width_(0),
