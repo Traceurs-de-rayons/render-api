@@ -12,6 +12,10 @@ gpuLoopThreadResult renderApi::device::gpuThreadLoop(GPU& gpu) {
 	while (gpu.running) {
 		std::vector<renderApi::gpuTask::GpuTask*> tasksToWait;
 
+		// Another thread asked for the lock (GPU::lockTasks()): let it have it first.
+		while (gpu.tasksLockRequests.load() > 0 && gpu.running)
+			std::this_thread::yield();
+
 		{
 			std::lock_guard<std::mutex> lock(gpu.GpuTasksMutex);
 
@@ -32,8 +36,7 @@ gpuLoopThreadResult renderApi::device::gpuThreadLoop(GPU& gpu) {
 		if (tasksToWait.empty()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		} else {
-			// std::mutex is not fair: without this the loop takes the lock back right away and a
-			// thread waiting to resize or rebuild a task can be starved for a long time.
+			// Not enough alone for a thread waiting for the lock (see GPU::lockTasks()).
 			std::this_thread::yield();
 		}
 	}
