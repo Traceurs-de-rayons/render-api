@@ -51,11 +51,12 @@ VkBufferUsageFlags Buffer::getVkUsageFlags() const {
 	VkBufferUsageFlags flags = 0;
 
 	switch (type_) {
+	// A source of transfers too: a buffer that grows is copied into its larger successor.
 	case BufferType::VERTEX:
-		flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		break;
 	case BufferType::INDEX:
-		flags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		flags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		break;
 	case BufferType::UNIFORM:
 		flags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
@@ -224,10 +225,11 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 	}
 
 	const bool usesHostVisibleMapping = (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING);
-	if (!usesHostVisibleMapping && transferFence_ != VK_NULL_HANDLE) {
+	// The copy through a staging buffer is waited for before this returns (endOneTimeCommands()),
+	// so this fence stays signaled: resetting it here, with nothing submitted to signal it again,
+	// made the next transfer of the same buffer wait forever.
+	if (!usesHostVisibleMapping && transferFence_ != VK_NULL_HANDLE)
 		vkWaitForFences(gpu_->device, 1, &transferFence_, VK_TRUE, UINT64_MAX);
-		vkResetFences(gpu_->device, 1, &transferFence_);
-	}
 
 	if (usesHostVisibleMapping) {
 		void* dst = map();
@@ -267,10 +269,11 @@ bool Buffer::download(void* data, size_t size, size_t offset) {
 	}
 
 	const bool usesHostVisibleMapping = (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING);
-	if (!usesHostVisibleMapping && transferFence_ != VK_NULL_HANDLE) {
+	// The copy through a staging buffer is waited for before this returns (endOneTimeCommands()),
+	// so this fence stays signaled: resetting it here, with nothing submitted to signal it again,
+	// made the next transfer of the same buffer wait forever.
+	if (!usesHostVisibleMapping && transferFence_ != VK_NULL_HANDLE)
 		vkWaitForFences(gpu_->device, 1, &transferFence_, VK_TRUE, UINT64_MAX);
-		vkResetFences(gpu_->device, 1, &transferFence_);
-	}
 
 	if (usesHostVisibleMapping) {
 		void* src = map();

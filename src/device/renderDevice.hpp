@@ -69,6 +69,9 @@ namespace renderApi::device {
 		std::future<gpuLoopThreadResult>		  finishCode;
 		std::vector<renderApi::gpuTask::GpuTask*> GpuTasks;
 		std::mutex								  GpuTasksMutex;
+		// Threads waiting for GpuTasksMutex in lockTasks(): the GPU thread does not take it back
+		// while there are some.
+		std::atomic<uint32_t>					  tasksLockRequests = 0;
 		std::mutex								  queueMutex;
 		std::string								  name;
 		std::atomic_bool						  renderEnabled = true;
@@ -79,6 +82,15 @@ namespace renderApi::device {
 		void			cleanup();
 		VkCommandBuffer beginOneTimeCommands();
 		void			endOneTimeCommands(VkCommandBuffer commandBuffer);
+		// GpuTasksMutex for any thread but the GPU one: once it is held, no task is recorded or
+		// executing. The GPU thread gives the lock up between two frames to whoever asked;
+		// std::mutex is not fair, and a plain lock could wait for seconds.
+		std::unique_lock<std::mutex> lockTasks() {
+			++tasksLockRequests;
+			std::unique_lock<std::mutex> lock(GpuTasksMutex);
+			--tasksLockRequests;
+			return lock;
+		}
 		VkQueue			getPresentQueue();
 
 		// Getters for ImGui integration

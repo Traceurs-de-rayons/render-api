@@ -299,6 +299,18 @@ void DescriptorSet::update() {
 	vkUpdateDescriptorSets(gpu_->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
+void DescriptorSet::setTextureArray(uint32_t binding, const std::vector<Texture*>& textures) {
+	if (textures.empty())
+		return;
+	for (auto& b : bindings_) {
+		if (b.binding != binding || b.textureArray.empty())
+			continue;
+		b.textureArray.assign(textures.begin(), textures.begin() + std::min<size_t>(textures.size(), MAX_BINDLESS_TEXTURES));
+		b.count		   = static_cast<uint32_t>(b.textureArray.size());
+		return;
+	}
+}
+
 void DescriptorSet::updateImageView(uint32_t binding, VkImageView imageView, VkSampler sampler) {
 	bool found = false;
 	for (auto& b : bindings_) {

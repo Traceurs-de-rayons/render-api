@@ -66,6 +66,9 @@ namespace renderApi::descriptor {
 		bool build(device::GPU* gpu, VkDescriptorPool pool);
 		void update();
 		void updateImageView(uint32_t binding, VkImageView imageView, VkSampler sampler);
+		// Replaces the textures of an array binding (at most the size its layout was made with);
+		// update() writes them. Nothing changes for an empty list or another kind of binding.
+		void setTextureArray(uint32_t binding, const std::vector<Texture*>& textures);
 		void destroy();
 
 		VkDescriptorSet		  getHandle() const { return descriptorSet_; }

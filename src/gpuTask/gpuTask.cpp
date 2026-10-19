@@ -204,7 +204,7 @@ void GpuTask::registerWithGPU() {
 		return;
 	}
 
-	std::lock_guard<std::mutex> lock(gpu_->GpuTasksMutex);
+	const auto lock = gpu_->lockTasks();
 
 	for (auto* task : gpu_->GpuTasks) {
 		if (task == this) {
@@ -220,7 +220,7 @@ void GpuTask::unregisterFromGPU() {
 		return;
 	}
 
-	std::lock_guard<std::mutex> lock(gpu_->GpuTasksMutex);
+	const auto lock = gpu_->lockTasks();
 
 	auto it = std::find(gpu_->GpuTasks.begin(), gpu_->GpuTasks.end(), this);
 	if (it != gpu_->GpuTasks.end()) {
