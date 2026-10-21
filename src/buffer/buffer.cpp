@@ -51,7 +51,6 @@ VkBufferUsageFlags Buffer::getVkUsageFlags() const {
 	VkBufferUsageFlags flags = 0;
 
 	switch (type_) {
-	// A source of transfers too: a buffer that grows is copied into its larger successor.
 	case BufferType::VERTEX:
 		flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		break;
@@ -130,13 +129,13 @@ bool Buffer::create(device::GPU* gpu, size_t size, BufferType type, BufferUsage 
 	VkMemoryRequirements memRequirements;
 	vkGetBufferMemoryRequirements(vkDevice, buffer_, &memRequirements);
 
-	
+
 	VkMemoryAllocateInfo allocInfo{};
 	allocInfo.sType			  = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize  = memRequirements.size;
 	allocInfo.memoryTypeIndex = device::findMemoryType(gpu->physicalDevice, memRequirements.memoryTypeBits, getMemoryFlags());
 
-	
+
 	VkMemoryAllocateFlagsInfo flagsInfo{};
 	if (getVkUsageFlags() & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 		flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
@@ -225,9 +224,7 @@ bool Buffer::upload(const void* data, size_t size, size_t offset) {
 	}
 
 	const bool usesHostVisibleMapping = (usage_ == BufferUsage::DYNAMIC || usage_ == BufferUsage::STREAM || type_ == BufferType::STAGING);
-	// The copy through a staging buffer is waited for before this returns (endOneTimeCommands()),
-	// so this fence stays signaled: resetting it here, with nothing submitted to signal it again,
-	// made the next transfer of the same buffer wait forever.
+
 	if (!usesHostVisibleMapping && transferFence_ != VK_NULL_HANDLE)
 		vkWaitForFences(gpu_->device, 1, &transferFence_, VK_TRUE, UINT64_MAX);
 
